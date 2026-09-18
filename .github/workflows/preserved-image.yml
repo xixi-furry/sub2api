@@ -1,0 +1,102 @@
+name: Build preserved 49a39b6 image
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [preserved-49a39b6]
+    paths: [.github/workflows/preserved-image.yml]
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: preserved-49a39b6-image
+  cancel-in-progress: false
+
+env:
+  SOURCE_SHA: 49a39b6dc1abed30fd227611e8af1108bc427610
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout the preserved source snapshot
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+
+      - name: Verify source and prepare image metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test -z "$(git status --porcelain)"
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish both architectures
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.image }}:sha-49a39b6
+          build-args: |
+            VERSION=0.2.6-preserved.49a39b6
+            COMMIT=${{ env.SOURCE_SHA }}
+            DATE=${{ steps.meta.outputs.date }}
+            GOPROXY=https://proxy.golang.org,direct
+            GOSUMDB=sum.golang.org
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ env.SOURCE_SHA }}
+            org.opencontainers.image.version=0.2.6-preserved.49a39b6
+            org.opencontainers.image.description=Independent build of the preserved upstream 49a39b6 source snapshot
+          cache-from: type=gha,scope=preserved-49a39b6
+          cache-to: type=gha,mode=max,scope=preserved-49a39b6
+
+      - name: Verify manifest and executables
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="$IMAGE@$DIGEST"
+          docker buildx imagetools inspect "$ref" --raw > manifest.json
+          for arch in amd64 arm64; do
+            jq -e --arg arch "$arch" '.manifests | any(.platform.os == "linux" and .platform.architecture == $arch)' manifest.json
+            docker run --rm --platform "linux/$arch" --entrypoint /app/sub2api "$ref" -version 2>&1 | tee "version-$arch.txt"
+            grep -F "$SOURCE_SHA" "version-$arch.txt"
+          done
+          {
+            echo '### Preserved Sub2API image'
+            echo
+            echo "Source: $SOURCE_SHA"
+            echo
+            echo "Platforms: linux/amd64, linux/arm64"
+            echo
+            echo '```bash'
+            echo "docker pull $IMAGE:sha-49a39b6"
+            echo "docker pull $ref"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
