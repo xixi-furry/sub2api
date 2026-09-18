@@ -1,4 +1,4 @@
-name: Build preserved 49a39b6 image
+name: Build restored v0.2.6 image
 
 on:
   workflow_dispatch:
@@ -15,14 +15,15 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  SOURCE_SHA: 49a39b6dc1abed30fd227611e8af1108bc427610
+  SOURCE_SHA: 8b69738d782ccaa7fd26511e1cca26ba8d1b58db
+  SOURCE_TREE: 3609a08fccf1f37761fbeaba768cee2f2e599660
 
 jobs:
   image:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: Checkout the preserved source snapshot
+      - name: Checkout the restored v0.2.6 source snapshot
         uses: actions/checkout@v6
         with:
           ref: ${{ env.SOURCE_SHA }}
@@ -34,6 +35,8 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(git rev-parse HEAD^{tree})" = "$SOURCE_TREE"
+          test "$(cat backend/cmd/server/VERSION)" = "0.2.6"
           test -z "$(git status --porcelain)"
           echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
           echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
@@ -59,9 +62,9 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.meta.outputs.image }}:sha-49a39b6
+          tags: ${{ steps.meta.outputs.image }}:v0.2.6
           build-args: |
-            VERSION=0.2.6-preserved.49a39b6
+            VERSION=0.2.6
             COMMIT=${{ env.SOURCE_SHA }}
             DATE=${{ steps.meta.outputs.date }}
             GOPROXY=https://proxy.golang.org,direct
@@ -69,8 +72,8 @@ jobs:
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ env.SOURCE_SHA }}
-            org.opencontainers.image.version=0.2.6-preserved.49a39b6
-            org.opencontainers.image.description=Independent build of the preserved upstream 49a39b6 source snapshot
+            org.opencontainers.image.version=0.2.6
+            org.opencontainers.image.description=Independent build of upstream v0.2.6 before rollback
           cache-from: type=gha,scope=preserved-49a39b6
           cache-to: type=gha,mode=max,scope=preserved-49a39b6
 
@@ -87,17 +90,17 @@ jobs:
             jq -e --arg arch "$arch" '.manifests | any(.platform.os == "linux" and .platform.architecture == $arch)' manifest.json
             platform_digest=$(jq -er --arg arch "$arch" '.manifests[] | select(.platform.os == "linux" and .platform.architecture == $arch) | .digest' manifest.json)
             docker run --rm --platform "linux/$arch" --entrypoint /app/sub2api "$IMAGE@$platform_digest" -version 2>&1 | tee "version-$arch.txt"
-            grep -F "$SOURCE_SHA" "version-$arch.txt"
+            grep -F "Sub2API 0.2.6 (commit: $SOURCE_SHA," "version-$arch.txt"
           done
           {
-            echo '### Preserved Sub2API image'
+            echo '### Restored Sub2API v0.2.6 image'
             echo
             echo "Source: $SOURCE_SHA"
             echo
             echo "Platforms: linux/amd64, linux/arm64"
             echo
             echo '```bash'
-            echo "docker pull $IMAGE:sha-49a39b6"
+            echo "docker pull $IMAGE:v0.2.6"
             echo "docker pull $ref"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
