@@ -85,7 +85,8 @@ jobs:
           docker buildx imagetools inspect "$ref" --raw > manifest.json
           for arch in amd64 arm64; do
             jq -e --arg arch "$arch" '.manifests | any(.platform.os == "linux" and .platform.architecture == $arch)' manifest.json
-            docker run --rm --platform "linux/$arch" --entrypoint /app/sub2api "$ref" -version 2>&1 | tee "version-$arch.txt"
+            platform_digest=$(jq -er --arg arch "$arch" '.manifests[] | select(.platform.os == "linux" and .platform.architecture == $arch) | .digest' manifest.json)
+            docker run --rm --platform "linux/$arch" --entrypoint /app/sub2api "$IMAGE@$platform_digest" -version 2>&1 | tee "version-$arch.txt"
             grep -F "$SOURCE_SHA" "version-$arch.txt"
           done
           {
