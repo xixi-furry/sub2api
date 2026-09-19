@@ -1,4 +1,4 @@
-name: Build v0.2.7 with 292 tickets
+name: Build Fur Code v0.2.7-fur.1 with 292 tickets
 
 on:
   workflow_dispatch:
@@ -16,15 +16,15 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  SOURCE_SHA: b252c1ef74f8c52a059d9b5a538614d1e9caaa06
-  SOURCE_TREE: f0de4bb7d4ad2c949a344c815edf37a5a9ba1d20
+  SOURCE_SHA: e1581ded30259bc78b490ca50f448628c92fc43f
+  SOURCE_TREE: b5886c442e99d62e974a9b6ad3ee0629d8d1409c
 
 jobs:
   image:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: Checkout v0.2.7 with preserved 292 tickets
+      - name: Checkout v0.2.7-fur.1 with preserved 292 tickets
         uses: actions/checkout@v6
         with:
           ref: ${{ env.SOURCE_SHA }}
@@ -39,6 +39,9 @@ jobs:
           test "$(git rev-parse HEAD^{tree})" = "$SOURCE_TREE"
           test "$(cat backend/cmd/server/VERSION)" = "0.2.7"
           test -z "$(git status --porcelain)"
+          test "$(git rev-parse HEAD:backend)" = "57d5ade8066d4b3a313c0e2254252a2e89e9d2a3"
+          test "$(git rev-parse HEAD:frontend/src/views/admin)" = "3d2a3dd39bb30619c2fbf20eef32d156b6e07964"
+          test "$(git rev-parse HEAD:frontend/src/views/user)" = "da00ce0e7b3613728dac498f4a2d81313df9676d"
           echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
           echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
@@ -49,7 +52,7 @@ jobs:
         run: |
           set -euo pipefail
           for attempt in $(seq 1 90); do
-            result=$(curl --fail --silent --show-error --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/35421838232")
+            result=$(curl --fail --silent --show-error --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/35429022291")
             test "$(jq -r '.head_sha' <<< "$result")" = "$SOURCE_SHA"
             if [ "$(jq -r '.status' <<< "$result")" = "completed" ]; then
               test "$(jq -r '.conclusion' <<< "$result")" = "success"
@@ -73,11 +76,12 @@ jobs:
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
 
-      - name: Verify ticket and account UI regressions
+      - name: Verify homepage, login, and preserved account UI regressions
         working-directory: frontend
         run: |
           pnpm install --frozen-lockfile
-          pnpm exec vitest run src/components/account/__tests__/AccountUsageCell.spec.ts src/components/account/__tests__/EditAccountModal.spec.ts src/components/account/__tests__/BulkEditAccountModal.spec.ts src/views/admin/__tests__/SettingsView.spec.ts
+          pnpm exec vitest run src/components/account/__tests__/AccountUsageCell.spec.ts src/components/account/__tests__/EditAccountModal.spec.ts src/components/account/__tests__/BulkEditAccountModal.spec.ts src/views/admin/__tests__/SettingsView.spec.ts src/components/fur-code/__tests__/FurCodeHome.spec.ts src/views/__tests__/HomeView.compact.spec.ts src/views/auth/__tests__/LoginView.spec.ts src/components/auth/__tests__/TotpLoginModal.spec.ts src/components/auth/__tests__/OAuthLoginSections.spec.ts
+          pnpm exec eslint src/components/fur-code src/views/HomeView.vue src/views/auth/LoginView.vue --ext .vue,.ts
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -100,9 +104,9 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.meta.outputs.image }}:v0.2.7
+          tags: ${{ steps.meta.outputs.image }}:v0.2.7-fur.1
           build-args: |
-            VERSION=0.2.7
+            VERSION=0.2.7-fur.1
             COMMIT=${{ env.SOURCE_SHA }}
             DATE=${{ steps.meta.outputs.date }}
             GOPROXY=https://proxy.golang.org,direct
@@ -110,8 +114,8 @@ jobs:
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ env.SOURCE_SHA }}
-            org.opencontainers.image.version=0.2.7
-            org.opencontainers.image.description=Upstream v0.2.7 with preserved built-in 292 ticket support
+            org.opencontainers.image.version=0.2.7-fur.1
+            org.opencontainers.image.description=Fur Code home and login on upstream v0.2.7 with preserved built-in 292 tickets
           cache-from: type=gha,scope=preserved-49a39b6
           cache-to: type=gha,mode=max,scope=preserved-49a39b6
 
@@ -128,17 +132,17 @@ jobs:
             jq -e --arg arch "$arch" '.manifests | any(.platform.os == "linux" and .platform.architecture == $arch)' manifest.json
             platform_digest=$(jq -er --arg arch "$arch" '.manifests[] | select(.platform.os == "linux" and .platform.architecture == $arch) | .digest' manifest.json)
             docker run --rm --platform "linux/$arch" --entrypoint /app/sub2api "$IMAGE@$platform_digest" -version 2>&1 | tee "version-$arch.txt"
-            grep -F "Sub2API 0.2.7 (commit: $SOURCE_SHA," "version-$arch.txt"
+            grep -F "Sub2API 0.2.7-fur.1 (commit: $SOURCE_SHA," "version-$arch.txt"
           done
           {
-            echo '### Sub2API v0.2.7 with 292 tickets'
+            echo '### Sub2API v0.2.7-fur.1 with 292 tickets'
             echo
             echo "Source: $SOURCE_SHA"
             echo
             echo "Platforms: linux/amd64, linux/arm64"
             echo
             echo '```bash'
-            echo "docker pull $IMAGE:v0.2.7"
+            echo "docker pull $IMAGE:v0.2.7-fur.1"
             echo "docker pull $ref"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
