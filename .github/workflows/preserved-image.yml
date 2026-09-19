@@ -1,4 +1,4 @@
-name: Build restored v0.2.6 image
+name: Build v0.2.7 with 292 tickets
 
 on:
   workflow_dispatch:
@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
   packages: write
 
 concurrency:
@@ -15,15 +16,15 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  SOURCE_SHA: 8b69738d782ccaa7fd26511e1cca26ba8d1b58db
-  SOURCE_TREE: 3609a08fccf1f37761fbeaba768cee2f2e599660
+  SOURCE_SHA: b252c1ef74f8c52a059d9b5a538614d1e9caaa06
+  SOURCE_TREE: f0de4bb7d4ad2c949a344c815edf37a5a9ba1d20
 
 jobs:
   image:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: Checkout the restored v0.2.6 source snapshot
+      - name: Checkout v0.2.7 with preserved 292 tickets
         uses: actions/checkout@v6
         with:
           ref: ${{ env.SOURCE_SHA }}
@@ -36,10 +37,47 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           test "$(git rev-parse HEAD^{tree})" = "$SOURCE_TREE"
-          test "$(cat backend/cmd/server/VERSION)" = "0.2.6"
+          test "$(cat backend/cmd/server/VERSION)" = "0.2.7"
           test -z "$(git status --porcelain)"
           echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
           echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for the exact source CI to pass
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 90); do
+            result=$(curl --fail --silent --show-error --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/35421838232")
+            test "$(jq -r '.head_sha' <<< "$result")" = "$SOURCE_SHA"
+            if [ "$(jq -r '.status' <<< "$result")" = "completed" ]; then
+              test "$(jq -r '.conclusion' <<< "$result")" = "success"
+              exit 0
+            fi
+            echo "Waiting for source CI (attempt $attempt/90)"
+            sleep 20
+          done
+          echo "Source CI did not complete within 30 minutes" >&2
+          exit 1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Verify ticket and account UI regressions
+        working-directory: frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec vitest run src/components/account/__tests__/AccountUsageCell.spec.ts src/components/account/__tests__/EditAccountModal.spec.ts src/components/account/__tests__/BulkEditAccountModal.spec.ts src/views/admin/__tests__/SettingsView.spec.ts
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -62,9 +100,9 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.meta.outputs.image }}:v0.2.6
+          tags: ${{ steps.meta.outputs.image }}:v0.2.7
           build-args: |
-            VERSION=0.2.6
+            VERSION=0.2.7
             COMMIT=${{ env.SOURCE_SHA }}
             DATE=${{ steps.meta.outputs.date }}
             GOPROXY=https://proxy.golang.org,direct
@@ -72,8 +110,8 @@ jobs:
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ env.SOURCE_SHA }}
-            org.opencontainers.image.version=0.2.6
-            org.opencontainers.image.description=Independent build of upstream v0.2.6 before rollback
+            org.opencontainers.image.version=0.2.7
+            org.opencontainers.image.description=Upstream v0.2.7 with preserved built-in 292 ticket support
           cache-from: type=gha,scope=preserved-49a39b6
           cache-to: type=gha,mode=max,scope=preserved-49a39b6
 
@@ -90,17 +128,17 @@ jobs:
             jq -e --arg arch "$arch" '.manifests | any(.platform.os == "linux" and .platform.architecture == $arch)' manifest.json
             platform_digest=$(jq -er --arg arch "$arch" '.manifests[] | select(.platform.os == "linux" and .platform.architecture == $arch) | .digest' manifest.json)
             docker run --rm --platform "linux/$arch" --entrypoint /app/sub2api "$IMAGE@$platform_digest" -version 2>&1 | tee "version-$arch.txt"
-            grep -F "Sub2API 0.2.6 (commit: $SOURCE_SHA," "version-$arch.txt"
+            grep -F "Sub2API 0.2.7 (commit: $SOURCE_SHA," "version-$arch.txt"
           done
           {
-            echo '### Restored Sub2API v0.2.6 image'
+            echo '### Sub2API v0.2.7 with 292 tickets'
             echo
             echo "Source: $SOURCE_SHA"
             echo
             echo "Platforms: linux/amd64, linux/arm64"
             echo
             echo '```bash'
-            echo "docker pull $IMAGE:v0.2.6"
+            echo "docker pull $IMAGE:v0.2.7"
             echo "docker pull $ref"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
