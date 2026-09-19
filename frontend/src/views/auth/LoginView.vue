@@ -3,13 +3,14 @@
     <div class="space-y-6">
       <!-- Title -->
       <div class="text-center">
-        <h2 class="text-2xl font-bold text-gray-900 dark:text-white">
-          {{ t('auth.welcomeBack') }}
+        <h2 class="fur-login-heading text-2xl font-bold text-gray-900 dark:text-white">
+          {{ isChinese ? '欢迎回来' : t('auth.welcomeBack') }}
         </h2>
-        <p class="mt-2 text-sm text-gray-500 dark:text-dark-400">
-          {{ t('auth.signInToAccount') }}
+        <p class="fur-login-subheading mt-2 text-sm text-gray-500 dark:text-dark-400">
+          {{ isChinese ? '登录 Fur Code，继续你的下一个好想法。' : t('auth.signInToAccount') }}
         </p>
       </div>
+      <p v-if="errorMessage" role="alert" class="fur-login-error">{{ errorMessage }}</p>
       <!-- Login Form -->
       <form @submit.prevent="handleLogin" class="space-y-5">
         <!-- Email Input -->
@@ -60,7 +61,9 @@
               type="button"
               @click="showPassword = !showPassword"
               :disabled="authActionDisabled"
-              class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-gray-400 transition-colors hover:text-gray-600 dark:hover:text-dark-300"
+              :aria-label="showPassword ? (isChinese ? '隐藏密码' : 'Hide password') : (isChinese ? '显示密码' : 'Show password')"
+              :aria-pressed="showPassword"
+              class="password-toggle absolute inset-y-0 right-0 flex items-center pr-3.5 text-gray-400 transition-colors hover:text-gray-600 dark:hover:text-dark-300"
             >
               <Icon v-if="showPassword" name="eyeOff" size="md" />
               <Icon v-else name="eye" size="md" />
@@ -225,7 +228,8 @@
 import { computed, ref, reactive, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { AuthLayout } from '@/components/layout'
+// This layout is exclusive to login; registration and both dashboards retain their upstream layouts.
+import AuthLayout from '@/components/fur-code/FurCodeAuthLayout.vue'
 import LinuxDoOAuthSection from '@/components/auth/LinuxDoOAuthSection.vue'
 import DingTalkOAuthSection from '@/components/auth/DingTalkOAuthSection.vue'
 import OidcOAuthSection from '@/components/auth/OidcOAuthSection.vue'
@@ -252,7 +256,8 @@ import type {
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import { clearAllAffiliateReferralCodes } from '@/utils/oauthAffiliate'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
+const isChinese = computed(() => !locale?.value || locale.value.startsWith('zh'))
 const LOGIN_AGREEMENT_STORAGE_KEY = 'sub2api_login_agreement_consent'
 
 // ==================== Router & Stores ====================
