@@ -9,6 +9,7 @@ import (
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -20,6 +21,9 @@ func contentModerationStatus(decision *service.ContentModerationDecision) int {
 }
 
 func contentModerationErrorCode(decision *service.ContentModerationDecision) string {
+	if decision != nil && decision.ErrorCode != "" {
+		return decision.ErrorCode
+	}
 	return "content_policy_violation"
 }
 
@@ -81,14 +85,20 @@ func runContentModeration(c *gin.Context, reqLog *zap.Logger, svc *service.Conte
 }
 
 func buildContentModerationInput(c *gin.Context, apiKey *service.APIKey, subject middleware2.AuthSubject, protocol string, model string, body []byte) service.ContentModerationCheckInput {
+	eventID := c.GetString("fork_moderation_event_id")
+	if eventID == "" {
+		eventID = uuid.NewString()
+		c.Set("fork_moderation_event_id", eventID)
+	}
 	input := service.ContentModerationCheckInput{
-		RequestID: contentModerationRequestID(c.Request.Context()),
-		UserID:    subject.UserID,
-		Endpoint:  GetInboundEndpoint(c),
-		Provider:  contentModerationProvider(apiKey),
-		Model:     clientRequestedModel(c, model),
-		Protocol:  protocol,
-		Body:      body,
+		AuditEventID: eventID,
+		RequestID:    contentModerationRequestID(c.Request.Context()),
+		UserID:       subject.UserID,
+		Endpoint:     GetInboundEndpoint(c),
+		Provider:     contentModerationProvider(apiKey),
+		Model:        clientRequestedModel(c, model),
+		Protocol:     protocol,
+		Body:         body,
 	}
 	if resolvedPlatform, ok := service.ResolvedTargetPlatformFromContext(c.Request.Context()); ok {
 		input.Provider = resolvedPlatform

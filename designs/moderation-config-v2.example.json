@@ -1,0 +1,74 @@
+{
+  "_design_only": "结构示例，不能导入当前版本。未包含真实 Key 或服务商地址。",
+  "schema_version": 2,
+  "enabled": false,
+  "revision": 1,
+  "policy": {
+    "prompt_source": "preserve_existing",
+    "mode": "preserve_existing",
+    "input": {
+      "strategy": "new_input_with_bounded_context",
+      "primary_total_tokens": 4096,
+      "review_total_tokens": 8192,
+      "output_tokens": 512,
+      "on_incomplete": null
+    },
+    "max_attempts_per_request": 2
+  },
+  "providers": [
+    {
+      "id": "existing-primary",
+      "enabled": true,
+      "revision": 1,
+      "kind": "chat_completions",
+      "base_url": "https://api.example.invalid/v1",
+      "model": "deepseek-flash",
+      "credentials": {
+        "source": "preserve_existing"
+      },
+      "threshold": 0.85,
+      "capabilities": {
+        "output_limit_parameter": null,
+        "counting_method": null,
+        "supports_images": false,
+        "usage_verified": false
+      },
+      "pricing": {
+        "currency": null,
+        "input_per_million": null,
+        "cached_input_per_million": null,
+        "output_per_million": null,
+        "price_revision": null
+      }
+    }
+  ],
+  "routing": {
+    "primary_provider_ids": [
+      "existing-primary"
+    ],
+    "fallback_provider_ids": [],
+    "review_provider_ids": [],
+    "review_enabled": false,
+    "review_intervals": {}
+  },
+  "cache": {
+    "enabled": false,
+    "ttl_seconds": 900,
+    "scope": "user_key_context_and_policy"
+  },
+  "budget": {
+    "timezone": null,
+    "currency": null,
+    "daily_amount": null,
+    "monthly_amount": null,
+    "daily_calls": null,
+    "on_exhausted": null,
+    "on_unavailable": null,
+    "on_storage_unavailable": null,
+    "reservations": "persistent"
+  },
+  "migration": {
+    "source": "legacy_snapshot",
+    "activate_automatically": false
+  }
+}

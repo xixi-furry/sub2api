@@ -12,6 +12,7 @@
             <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.description') }}</p>
           </div>
           <div class="flex flex-wrap items-center gap-2">
+            <button type="button" class="btn btn-secondary" @click="v2Open = true">{{ t('admin.riskControl.v2Title') }}</button>
             <button type="button" class="btn btn-secondary inline-flex items-center gap-2" :disabled="statusLoading" @click="loadStatus(false)">
               <Icon name="refresh" size="sm" :class="statusLoading ? 'animate-spin' : ''" />
               {{ t('admin.riskControl.refreshStatus') }}
@@ -24,9 +25,9 @@
         </div>
 
         <p class="text-sm text-gray-600 dark:text-gray-300" data-test="active-audit-engine">
-          {{ t('admin.riskControl.activeEngine', { engine: engineLabel(status?.engine ?? savedEngine) }) }}
+          {{ status?.v2_enabled ? t('admin.riskControl.v2Active') : t('admin.riskControl.activeEngine', { engine: engineLabel(status?.engine ?? savedEngine) }) }}
         </p>
-        <p v-if="status?.enabled && status.risk_control_enabled && status.mode !== 'off' && status.pre_block_api_key_available_count === 0" class="text-sm text-amber-700 dark:text-amber-300" role="status">
+        <p v-if="!status?.v2_enabled && status?.enabled && status.risk_control_enabled && status.mode !== 'off' && status.pre_block_api_key_available_count === 0" class="text-sm text-amber-700 dark:text-amber-300" role="status">
           {{ t('admin.riskControl.engineUnavailable') }}
         </p>
 
@@ -92,7 +93,7 @@
             </div>
           </div>
 
-          <div data-test="pre-block-api-key-load-card" class="card">
+          <div v-if="!status?.v2_enabled" data-test="pre-block-api-key-load-card" class="card">
             <div class="flex flex-col gap-4 border-b border-gray-100 px-6 py-4 dark:border-dark-700 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.preBlockAPIKeyLoad') }}</h2>
@@ -421,11 +422,12 @@
               </div>
               <div>
                 <label class="input-label">{{ t('admin.riskControl.model') }}</label>
-                <input v-model.trim="configForm.model" data-test="audit-model" type="text" class="input" :placeholder="configForm.engine === 'typesafe' ? 'jev-latest' : 'omni-moderation-latest'" />
+                <input v-model.trim="configForm.model" data-test="audit-model" type="text" class="input" :placeholder="configForm.engine === 'typesafe' ? 'jev-latest' : configForm.api_format === 'chat_completions' ? t('admin.riskControl.chatModelPlaceholder') : 'omni-moderation-latest'" />
               </div>
               <div>
                 <label class="input-label">{{ t('admin.riskControl.timeoutMs') }}</label>
                 <input v-model.number="configForm.timeout_ms" type="number" min="500" max="30000" class="input" />
+                <p v-if="configForm.engine === 'openai' && configForm.api_format === 'chat_completions'" class="input-hint">{{ t('admin.riskControl.chatTimeoutHint') }}</p>
               </div>
               <div>
                 <label class="input-label">{{ t('admin.riskControl.retryCount') }}</label>
@@ -685,7 +687,7 @@
                     <div class="flex items-start justify-between gap-3">
                       <div>
                         <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.auditTestResult') }}</p>
-                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        <p v-if="!isBooleanModerationResult" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
                           {{ t('admin.riskControl.auditTestHighest', { category: moderationTestResult.highest_category || '-', score: percent(moderationTestResult.highest_score) }) }}
                         </p>
                       </div>
@@ -693,7 +695,9 @@
                         {{ moderationTestResult.flagged ? t('admin.riskControl.auditTestFlagged') : t('admin.riskControl.auditTestPassed') }}
                       </span>
                     </div>
-                    <div class="mt-3">
+                    <p v-if="moderationDecisionExplanation" data-test="moderation-decision-explanation" class="mt-3 text-sm leading-6 text-gray-700 dark:text-gray-300">{{ moderationDecisionExplanation }}</p>
+                    <p class="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.auditTestDraftHint') }}</p>
+                    <div v-if="!isBooleanModerationResult" data-test="moderation-score-chart" class="mt-3">
                       <div class="mb-2 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
                         <span>{{ t('admin.riskControl.auditTestComposite') }}</span>
                         <span class="font-semibold text-gray-900 dark:text-white">{{ percent(moderationTestResult.composite_score) }}</span>
@@ -702,7 +706,7 @@
                         <div class="h-full rounded-full" :class="moderationTestResult.flagged ? 'bg-red-500' : 'bg-emerald-500'" :style="{ width: percentWidth(moderationTestResult.composite_score) }"></div>
                       </div>
                     </div>
-                    <div class="mt-3 max-h-52 space-y-2 overflow-y-auto pr-1">
+                    <div v-if="!isBooleanModerationResult" class="mt-3 max-h-52 space-y-2 overflow-y-auto pr-1">
                       <div v-for="score in moderationScoreRows" :key="score.category">
                         <div class="mb-1 flex items-center justify-between gap-3 text-xs">
                           <span class="truncate text-gray-600 dark:text-gray-300">{{ score.category }}</span>
@@ -725,6 +729,7 @@
               {{ t('admin.riskControl.customCodeTypeSafe') }}
             </p>
             <template v-else>
+              <p v-if="configForm.api_format === 'chat_completions'" class="rounded-xl border border-primary-100 bg-primary-50/60 px-4 py-3 text-sm leading-6 text-primary-800 dark:border-primary-800 dark:bg-primary-900/20 dark:text-primary-200">{{ t('admin.riskControl.promptOnlyHint') }}</p>
               <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
                 <div>
                   <label for="moderation-api-format" class="input-label">{{ t('admin.riskControl.apiFormat') }}</label>
@@ -746,12 +751,20 @@
                 <p id="moderation-prompt-help" class="input-hint">{{ t('admin.riskControl.auditPromptHint') }}</p>
               </div>
               <div>
-                <div class="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-                  <label for="moderation-payload-script" class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.riskControl.payloadScript') }}</label>
-                  <button v-if="!configForm.payload_script" type="button" class="rounded-lg px-3 py-2 text-sm text-primary-700 hover:bg-primary-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500 dark:text-primary-300 dark:hover:bg-primary-900/30" @click="configForm.payload_script = moderationPayloadExample">{{ t('admin.riskControl.insertPayloadExample') }}</button>
-                </div>
-                <textarea id="moderation-payload-script" v-model="configForm.payload_script" data-test="moderation-payload-script" rows="12" class="input resize-y font-mono text-xs leading-6" spellcheck="false" autocapitalize="off" autocorrect="off" :placeholder="t('admin.riskControl.payloadScriptPlaceholder')" aria-describedby="moderation-payload-help"></textarea>
-                <p id="moderation-payload-help" class="input-hint leading-5">{{ t('admin.riskControl.payloadScriptHint') }}</p>
+                <p data-test="moderation-payload-mode" class="mb-3 text-sm leading-6 text-gray-600 dark:text-gray-300">{{ configForm.payload_script.trim() ? t('admin.riskControl.customPayloadActive') : t('admin.riskControl.defaultPayloadActive') }}</p>
+                <details class="rounded-xl border border-gray-200 dark:border-dark-600" data-test="moderation-payload-advanced">
+                  <summary class="cursor-pointer rounded-xl px-4 py-3 text-sm font-medium text-gray-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500 dark:text-gray-200">{{ t('admin.riskControl.payloadAdvanced') }}</summary>
+                  <div class="space-y-3 px-4 pb-4">
+                    <p class="text-sm leading-6 text-gray-600 dark:text-gray-300">{{ t('admin.riskControl.payloadOptionalHint') }}</p>
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                      <label for="moderation-payload-script" class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.riskControl.payloadScript') }}</label>
+                      <button v-if="!configForm.payload_script.trim()" type="button" class="btn btn-secondary" @click="configForm.payload_script = moderationPayloadExample">{{ t('admin.riskControl.insertPayloadExample') }}</button>
+                      <button v-else type="button" data-test="moderation-reset-payload" class="btn btn-secondary" @click="configForm.payload_script = ''">{{ t('admin.riskControl.resetPayload') }}</button>
+                    </div>
+                    <textarea id="moderation-payload-script" v-model="configForm.payload_script" data-test="moderation-payload-script" rows="12" class="input resize-y font-mono text-xs leading-6" spellcheck="false" autocapitalize="off" autocorrect="off" :placeholder="t('admin.riskControl.payloadScriptPlaceholder')" aria-describedby="moderation-payload-help"></textarea>
+                    <p id="moderation-payload-help" class="input-hint leading-5">{{ t('admin.riskControl.payloadScriptHint') }}</p>
+                  </div>
+                </details>
               </div>
               <p class="rounded-xl border border-primary-100 bg-primary-50/60 px-4 py-3 text-sm leading-6 text-primary-800 dark:border-primary-800 dark:bg-primary-900/20 dark:text-primary-200">{{ t('admin.riskControl.customCodeTestHint') }}</p>
               <button type="button" class="btn btn-secondary" @click="activeSettingsTab = 'basic'">{{ t('admin.riskControl.goToAuditTest') }}</button>
@@ -1189,6 +1202,7 @@
         </template>
       </BaseDialog>
     </div>
+    <ContentModerationV2Panel v-if="v2Open" @close="v2Open = false" @saved="loadStatus(false)" />
   </AppLayout>
 </template>
 
@@ -1198,6 +1212,7 @@ import { computed, onMounted, onUnmounted, reactive, ref, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import ContentModerationV2Panel from '@/components/admin/ContentModerationV2Panel.vue'
 import Icon from '@/components/icons/Icon.vue'
 import Select from '@/components/common/Select.vue'
 import Toggle from '@/components/common/Toggle.vue'
@@ -1274,6 +1289,7 @@ const riskThresholdCategories = Object.keys(riskThresholdDefaults)
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const v2Open = ref(false)
 const defaultBlockMessage = () => t('admin.riskControl.defaultBlockMessage')
 
 const loading = ref(true)
@@ -1300,7 +1316,7 @@ const moderationTestResult = ref<ContentModerationTestAuditResult | null>(null)
 const inputDetailRow = ref<ContentModerationLog | null>(null)
 const savedEngine = ref<ModerationEngine>('openai')
 const engineOptions: SelectOption[] = [{ value: 'openai', label: 'OpenAI Compatible' }, { value: 'typesafe', label: 'TypeSafe AI' }]
-const engineLabel = (engine: ModerationEngine) => engine === 'typesafe' ? 'TypeSafe AI' : 'OpenAI'
+const engineLabel = (engine: ModerationEngine) => engine === 'typesafe' ? 'TypeSafe AI' : 'OpenAI Compatible'
 let statusTimer: number | null = null
 
 const configForm = reactive({
@@ -1698,6 +1714,21 @@ const overviewItems = computed<OverviewItem[]>(() => [
     iconClass: 'bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-300',
   },
 ])
+
+const isBooleanModerationResult = computed(() => moderationTestResult.value?.engine_meta?.decision_source === 'flagged')
+const moderationDecisionExplanation = computed(() => {
+  const result = moderationTestResult.value
+  if (!result) return ''
+  if (isBooleanModerationResult.value) {
+    return t('admin.riskControl.auditBooleanDecision', { value: String(result.flagged) })
+  }
+  if (result.engine_meta?.decision_source !== 'confidence') return ''
+  const threshold = result.thresholds?.custom
+  if (threshold == null) return ''
+  return t(result.flagged ? 'admin.riskControl.auditConfidenceHit' : 'admin.riskControl.auditConfidenceMiss', {
+    score: percent(result.highest_score), threshold: percent(threshold),
+  })
+})
 
 const moderationScoreRows = computed<ModerationScoreRow[]>(() => {
   const result = moderationTestResult.value
@@ -2296,6 +2327,7 @@ function modeDescription(mode: ModerationMode): string {
 }
 
 function resultLabel(row: ContentModerationLog): string {
+  if (row.action === 'unreviewed') return t('admin.riskControl.v2Unreviewed')
   if (row.action === 'cyber_policy') return t('admin.riskControl.action.cyberPolicy')
   if (row.action === 'keyword_block') return t('admin.riskControl.action.keywordBlock')
   if (row.action === 'block') return t('admin.riskControl.action.block')

@@ -228,6 +228,7 @@ func (r *contentModerationRepository) UpdateLogEmailSent(ctx context.Context, id
 }
 
 func (r *contentModerationRepository) CleanupExpiredLogs(ctx context.Context, hitBefore time.Time, nonHitBefore time.Time) (*service.ContentModerationCleanupResult, error) {
+	r.cleanupModerationV2(ctx)
 	result := &service.ContentModerationCleanupResult{FinishedAt: time.Now()}
 	if r == nil || r.db == nil {
 		return result, nil

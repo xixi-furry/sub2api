@@ -3,6 +3,8 @@ import { resolve } from 'path'
 import vue from '@vitejs/plugin-vue'
 
 export default defineConfig({
+  // Match production: exercise real translations without unsafe-eval.
+  define: { __INTLIFY_JIT_COMPILATION__: true },
   plugins: [vue()],
   resolve: {
     alias: {

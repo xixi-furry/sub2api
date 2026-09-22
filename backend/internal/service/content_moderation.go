@@ -320,18 +320,19 @@ type ContentModerationModelFilter struct {
 }
 
 type ContentModerationCheckInput struct {
-	RequestID  string
-	UserID     int64
-	UserEmail  string
-	APIKeyID   int64
-	APIKeyName string
-	GroupID    *int64
-	GroupName  string
-	Endpoint   string
-	Provider   string
-	Model      string
-	Protocol   string
-	Body       []byte
+	AuditEventID string // Server-generated identity; correlation IDs may be supplied by clients.
+	RequestID    string
+	UserID       int64
+	UserEmail    string
+	APIKeyID     int64
+	APIKeyName   string
+	GroupID      *int64
+	GroupName    string
+	Endpoint     string
+	Provider     string
+	Model        string
+	Protocol     string
+	Body         []byte
 }
 
 type ContentModerationInput struct {
@@ -386,6 +387,7 @@ func (in ContentModerationInput) Hash() string {
 }
 
 type ContentModerationDecision struct {
+	ErrorCode       string             `json:"error_code,omitempty"`
 	Allowed         bool               `json:"allowed"`
 	Blocked         bool               `json:"blocked"`
 	Flagged         bool               `json:"flagged"`
@@ -447,6 +449,7 @@ type ContentModerationCleanupResult struct {
 }
 
 type ContentModerationRuntimeStatus struct {
+	V2Enabled                    bool                            `json:"v2_enabled"`
 	Engine                       string                          `json:"engine"`
 	Enabled                      bool                            `json:"enabled"`
 	RiskControlEnabled           bool                            `json:"risk_control_enabled"`
@@ -549,6 +552,7 @@ type ContentModerationService struct {
 }
 
 type contentModerationRuntimeSnapshot struct {
+	v2                 *ModerationV2Config
 	riskControlEnabled bool
 	config             *ContentModerationConfig
 	keywordMatcher     *contentModerationKeywordMatcher
@@ -557,6 +561,8 @@ type contentModerationRuntimeSnapshot struct {
 }
 
 type contentModerationTask struct {
+	v2               *ModerationV2Config
+	v2EventID        string
 	input            ContentModerationCheckInput
 	content          ContentModerationInput
 	inputHash        string
@@ -732,6 +738,11 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 }
 
 func (s *ContentModerationService) TestAPIKeys(ctx context.Context, input TestContentModerationAPIKeysInput) (*TestContentModerationAPIKeysResult, error) {
+	if v2, e := s.loadModerationV2Config(ctx); e != nil {
+		return nil, e
+	} else if v2.Enabled {
+		return nil, infraerrors.BadRequest("USE_MODERATION_V2_TEST", "请使用多服务审核中的试跑，统一计入预算 / Use the budgeted v2 test")
+	}
 	cfg, err := s.loadConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -954,6 +965,9 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 				"protocol", input.Protocol)
 			return allow, nil
 		}
+	}
+	if runtimeSnapshot.v2 != nil && runtimeSnapshot.v2.Enabled {
+		return s.dispatchModerationV2(ctx, input, runtimeSnapshot.v2, cfg), nil
 	}
 	content := ExtractContentModerationInput(input.Protocol, input.Body)
 	if content.IsEmpty() {
@@ -1269,6 +1283,16 @@ func (s *ContentModerationService) worker(id int) {
 				s.asyncProcessed.Add(1)
 				return
 			}
+			if task.v2 != nil {
+				if !runtimeSnapshot.riskControlEnabled || !cfg.Enabled || cfg.Mode == ContentModerationModeOff {
+					return
+				}
+				s.asyncActive.Add(1)
+				defer s.asyncActive.Add(-1)
+				_ = s.checkModerationV2(ctx, task.input, task.v2, task.config, task.v2EventID)
+				s.asyncProcessed.Add(1)
+				return
+			}
 			if !cfg.Enabled || cfg.Mode == ContentModerationModeOff || len(cfg.apiKeys()) == 0 {
 				return
 			}
@@ -1428,7 +1452,12 @@ func (s *ContentModerationService) GetStatus(ctx context.Context) (*ContentModer
 		t := time.Unix(unix, 0)
 		lastCleanupAt = &t
 	}
+	v2, err := s.loadModerationV2Config(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return &ContentModerationRuntimeStatus{
+		V2Enabled:                    v2.Enabled,
 		Engine:                       cfg.Engine,
 		Enabled:                      cfg.Enabled,
 		RiskControlEnabled:           riskEnabled,
@@ -1584,15 +1613,23 @@ func (s *ContentModerationService) refreshRuntimeSnapshot(ctx context.Context) (
 	values, err := s.settingRepo.GetMultiple(ctx, []string{
 		SettingKeyRiskControlEnabled,
 		SettingKeyContentModerationConfig,
+		SettingKeyContentModerationV2,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("get content moderation runtime settings: %w", err)
 	}
 	rawConfig := values[SettingKeyContentModerationConfig]
-	configDigest := sha256.Sum256([]byte(rawConfig))
+	configDigest := sha256.Sum256([]byte(rawConfig + "\x00" + values[SettingKeyContentModerationV2]))
+	v2, v2err := parseModerationV2Config(values[SettingKeyContentModerationV2])
+	if v2err != nil {
+		v2 = defaultModerationV2Config()
+		v2.Enabled = true
+		v2.UnresolvedPolicy = "reject_temporary"
+	}
 	if current := s.runtimeSnapshot.Load(); current != nil && current.configDigest == configDigest {
 		snapshot := &contentModerationRuntimeSnapshot{
 			riskControlEnabled: values[SettingKeyRiskControlEnabled] == "true",
+			v2:                 v2,
 			config:             current.config,
 			keywordMatcher:     current.keywordMatcher,
 			configDigest:       configDigest,
@@ -1609,6 +1646,7 @@ func (s *ContentModerationService) refreshRuntimeSnapshot(ctx context.Context) (
 	cfg = cfg.effectiveEngine(cfg.Engine)
 	snapshot := &contentModerationRuntimeSnapshot{
 		riskControlEnabled: values[SettingKeyRiskControlEnabled] == "true",
+		v2:                 v2,
 		config:             cfg,
 		keywordMatcher:     newContentModerationKeywordMatcher(cfg.BlockedKeywords),
 		configDigest:       configDigest,
@@ -1641,6 +1679,7 @@ func (s *ContentModerationService) replaceRuntimeConfig(cfg *ContentModerationCo
 	}
 	s.runtimeSnapshot.Store(&contentModerationRuntimeSnapshot{
 		riskControlEnabled: current.riskControlEnabled,
+		v2:                 current.v2,
 		config:             config,
 		keywordMatcher:     keywordMatcher,
 		configDigest:       configDigest,

@@ -238,7 +238,9 @@ func parseChatModerationResponse(body io.Reader, cfg *ContentModerationConfig) (
 		return nil, errors.New("chat moderation must return a JSON object containing confidence (0..1) or flagged (boolean)")
 	}
 	score, flagged := 0.0, false
+	decisionSource := "flagged"
 	if verdict.Confidence != nil {
+		decisionSource = "confidence"
 		score = *verdict.Confidence
 		if math.IsNaN(score) || math.IsInf(score, 0) || score < 0 || score > 1 {
 			return nil, errors.New("chat moderation confidence must be between 0 and 1")
@@ -254,7 +256,7 @@ func parseChatModerationResponse(body io.Reader, cfg *ContentModerationConfig) (
 		Flagged: flagged, Custom: true,
 		CategoryScores:  map[string]float64{customModerationCategory: score},
 		CustomThreshold: cfg.ConfidenceThreshold,
-		EngineMeta:      &ContentModerationEngineMeta{Engine: ContentModerationEngineOpenAI, Model: out.Model, RulesVersion: "custom-chat-v1", Reason: trimRunes(redactContentModerationSecrets(verdict.Reason), 240)},
+		EngineMeta:      &ContentModerationEngineMeta{DecisionSource: decisionSource, Engine: ContentModerationEngineOpenAI, Model: out.Model, RulesVersion: "custom-chat-v1", Reason: trimRunes(redactContentModerationSecrets(verdict.Reason), 240)},
 	}, nil
 }
 

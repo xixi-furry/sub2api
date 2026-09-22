@@ -39,11 +39,15 @@ type UpdateContentModerationEngineInput struct {
 }
 
 type ContentModerationEngineMeta struct {
-	Reason        string `json:"reason,omitempty"`
-	Engine        string `json:"engine"`
-	Model         string `json:"model"`
-	RulesVersion  string `json:"rules_version"`
-	SkippedImages int    `json:"skipped_images"`
+	ProviderID     string `json:"provider_id,omitempty"`
+	Status         string `json:"status,omitempty"`
+	CacheHit       bool   `json:"cache_hit,omitempty"`
+	DecisionSource string `json:"decision_source,omitempty"`
+	Reason         string `json:"reason,omitempty"`
+	Engine         string `json:"engine"`
+	Model          string `json:"model"`
+	RulesVersion   string `json:"rules_version"`
+	SkippedImages  int    `json:"skipped_images"`
 }
 
 func moderationEngine(engine string) string {

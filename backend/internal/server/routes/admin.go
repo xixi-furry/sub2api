@@ -170,6 +170,11 @@ func registerAdminComplianceRoutes(admin *gin.RouterGroup, h *handler.Handlers) 
 func registerContentModerationRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	risk := admin.Group("/risk-control")
 	{
+		risk.GET("/v2/config", h.Admin.ContentModeration.GetV2Config)
+		risk.PUT("/v2/config", h.Admin.ContentModeration.UpdateV2Config)
+		risk.GET("/v2/usage", h.Admin.ContentModeration.GetV2Usage)
+		risk.POST("/v2/preview", h.Admin.ContentModeration.PreviewV2)
+		risk.POST("/v2/test", h.Admin.ContentModeration.TestV2)
 		risk.GET("/config", h.Admin.ContentModeration.GetConfig)
 		risk.PUT("/config", h.Admin.ContentModeration.UpdateConfig)
 		risk.POST("/api-keys/test", h.Admin.ContentModeration.TestAPIKeys)

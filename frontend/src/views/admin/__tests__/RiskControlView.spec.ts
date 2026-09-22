@@ -69,6 +69,10 @@ vi.mock('vue-i18n', async () => {
         if (key === 'admin.riskControl.preBlockAPIKeyLoadSummary') {
           return `同步并发 ${params?.active} / 可用 Key ${params?.available}，累计 ${params?.total} 次，worker：${params?.workerActive} / ${params?.workerTotal}`
         }
+        if (key === 'admin.riskControl.auditBooleanDecision') return `flagged=${params?.value}; no confidence`
+        if (key === 'admin.riskControl.auditConfidenceHit' || key === 'admin.riskControl.auditConfidenceMiss') {
+          return `${key}: ${params?.score} / ${params?.threshold}`
+        }
         return key.replace(/\{(\w+)\}/g, (_, token) => String(params?.[token] ?? `{${token}}`))
       },
     }),
@@ -238,7 +242,10 @@ describe('admin RiskControlView', () => {
     await flushPromises()
     await findButtonByText(wrapper, 'admin.riskControl.customCode').trigger('click')
     expect((wrapper.get('[data-test="moderation-audit-prompt"]').element as HTMLTextAreaElement).value).toBe('my custom policy')
-    await wrapper.get('[data-test="moderation-payload-script"]').setValue('')
+    expect(wrapper.get('[data-test="moderation-payload-mode"]').text()).toContain('admin.riskControl.customPayloadActive')
+    await wrapper.get('[data-test="moderation-reset-payload"]').trigger('click')
+    expect(wrapper.get('[data-test="moderation-payload-mode"]').text()).toContain('admin.riskControl.defaultPayloadActive')
+    expect((wrapper.get('[data-test="moderation-audit-prompt"]').element as HTMLTextAreaElement).value).toBe('my custom policy')
     await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
     await flushPromises()
     const custom = { api_format: 'chat_completions', audit_prompt: 'my custom policy', payload_script: '', confidence_threshold: 0 }
@@ -269,6 +276,43 @@ describe('admin RiskControlView', () => {
     await findButtonByText(wrapper, 'admin.riskControl.testInputApiKeys').trigger('click')
     await flushPromises()
     expect(testAPIKeys).toHaveBeenCalledWith(expect.objectContaining({ api_format: 'chat_completions', audit_prompt: 'draft policy', payload_script: script, confidence_threshold: 0.7 }))
+    expect(updateConfig).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it.each([
+    { source: 'flagged' as const, flagged: true, score: 1, threshold: 0.85 },
+    { source: 'flagged' as const, flagged: false, score: 0, threshold: 0 },
+    { source: 'confidence' as const, flagged: false, score: 0.62, threshold: 0.85 },
+    { source: 'confidence' as const, flagged: true, score: 0.9, threshold: 0.85 },
+  ])('explains a $source verdict ($flagged) using the tested configuration', async ({ source, flagged, score, threshold }) => {
+    getConfig.mockResolvedValue({ ...baseConfig(), api_format: 'chat_completions', audit_prompt: 'saved policy', confidence_threshold: threshold })
+    testAPIKeys.mockResolvedValue({ items: [{ status: 'ok', configured: false }], image_count: 0, audit_result: {
+      engine_meta: { engine: 'openai', model: 'audit-model', rules_version: 'custom-chat-v1', decision_source: source },
+      flagged, highest_category: 'custom', highest_score: score, composite_score: score,
+      category_scores: { custom: score }, thresholds: { custom: threshold },
+    } })
+    const wrapper = mount(RiskControlView, { global: { stubs: { AppLayout: AppLayoutStub, BaseDialog: BaseDialogStub, Icon: true, Select: true, Toggle: true, Pagination: true, ModelWhitelistSelector: ModelWhitelistSelectorStub, ProxySelector: true } } })
+    await flushPromises()
+    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+    await wrapper.get('textarea[autocomplete="new-password"]').setValue('test-only-key')
+    await findButtonByText(wrapper, 'admin.riskControl.testInputApiKeys').trigger('click')
+    await flushPromises()
+    const explanation = wrapper.get('[data-test="moderation-decision-explanation"]').text()
+    if (source === 'flagged') {
+      expect(explanation).toContain(`flagged=${flagged}; no confidence`)
+      expect(wrapper.find('[data-test="moderation-score-chart"]').exists()).toBe(false)
+    } else {
+      expect(explanation).toContain(flagged ? 'auditConfidenceHit' : 'auditConfidenceMiss')
+      expect(explanation).toContain(`${(score * 100).toFixed(1)}% / 85.0%`)
+      expect(wrapper.find('[data-test="moderation-score-chart"]').exists()).toBe(true)
+    }
+    // Editing the next test's threshold must not rewrite the previous verdict.
+    await findButtonByText(wrapper, 'admin.riskControl.customCode').trigger('click')
+    expect(wrapper.get('[data-test="moderation-payload-advanced"]').attributes('open')).toBeUndefined()
+    await wrapper.get('[data-test="moderation-confidence"]').setValue('0.1')
+    await findButtonByText(wrapper, 'admin.riskControl.tabs.basic').trigger('click')
+    expect(wrapper.get('[data-test="moderation-decision-explanation"]').text()).toBe(explanation)
     expect(updateConfig).not.toHaveBeenCalled()
     wrapper.unmount()
   })

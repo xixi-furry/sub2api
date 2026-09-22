@@ -271,3 +271,30 @@ func TestCustomModerationGatewayCheck(t *testing.T) {
 		})
 	}
 }
+
+// A boolean verdict is not a calibrated confidence of zero or one. Preserve its
+// source through the test API so the UI can show the actual decision semantics.
+func TestCustomModerationDecisionSource(t *testing.T) {
+	for _, tc := range []struct {
+		name, response, source string
+		flagged                bool
+	}{
+		{"confidence below threshold", `{"confidence":0.62}`, "confidence", false},
+		{"confidence above threshold", `{"confidence":0.9}`, "confidence", true},
+		{"boolean true", `{"flagged":true}`, "flagged", true},
+		{"boolean false", `{"flagged":false}`, "flagged", false},
+		{"confidence overrides boolean", `{"confidence":0.62,"flagged":true}`, "confidence", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := customModerationTestConfig()
+			result, err := parseChatModerationResponse(strings.NewReader(customChatResponse(tc.response)), cfg)
+			require.NoError(t, err)
+			audit := buildContentModerationTestAuditResult(result, cfg.Thresholds)
+			require.Equal(t, tc.flagged, audit.Flagged)
+			require.Equal(t, tc.source, audit.EngineMeta.DecisionSource)
+			serialized, err := json.Marshal(audit)
+			require.NoError(t, err)
+			require.Contains(t, string(serialized), `"decision_source":"`+tc.source+`"`)
+		})
+	}
+}

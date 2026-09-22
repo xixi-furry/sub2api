@@ -3,6 +3,7 @@ import { apiClient } from '../client'
 export type ModerationMode = 'off' | 'observe' | 'pre_block'
 export type ModerationEngine = 'openai' | 'typesafe'
 export interface ModerationEngineMeta {
+  decision_source?: 'confidence' | 'flagged'
   reason?: string
   engine: ModerationEngine
   model: string
@@ -152,6 +153,7 @@ export interface UpdateContentModerationConfig {
 }
 
 export interface ContentModerationRuntimeStatus {
+  v2_enabled?: boolean
   engine?: ModerationEngine
   enabled: boolean
   risk_control_enabled: boolean
