@@ -232,7 +232,7 @@ func moderationV2Content(in ContentModerationCheckInput) (ContentModerationInput
 			if typ == "image" || typ == "image_url" || typ == "input_image" || part.Get("inlineData").Exists() || part.Get("fileData").Exists() {
 				return content, "images_not_supported"
 			}
-			if typ != "text" && typ != "input_text" && !(in.Protocol == ContentModerationProtocolGemini && part.Get("text").Type == gjson.String) {
+			if typ != "text" && typ != "input_text" && (in.Protocol != ContentModerationProtocolGemini || part.Get("text").Type != gjson.String) {
 				return content, "unsupported_input_parts"
 			}
 		}

@@ -15,7 +15,7 @@ const fixture = (): AuditConfig => ({ revision: 1, enabled: false, currency: 'CN
   limits: { daily_calls: 0, daily_tokens: 0, daily_amount: '' }, providers: [{ id: 'existing', name: 'My provider', enabled: true, base_url: 'https://provider.example/v1', model: 'small', proxy_id: null, key_masks: ['****tail'], audit_prompt: 'Return confidence JSON', payload_script: '', threshold: 0.85, timeout_ms: 5000, max_input_tokens: 4096, max_output_tokens: 512, output_parameter: 'max_tokens', output_limit_verified: false, max_concurrent: 4, prices: { input: '', cached_input: '', output: '', per_request: '' }, limits: { daily_calls: 0, daily_tokens: 0, daily_amount: '' } }] })
 async function render() {
   const wrapper = mount(Panel, { global: {
-    plugins: [createI18n({ legacy: false, locale: 'zh', messages: {} })],
+    plugins: [createI18n({ legacy: false, locale: 'zh', messages: { zh: { moderationV2: moderationV2Messages.zh }, en: { moderationV2: moderationV2Messages.en } } })],
     stubs: { BaseDialog: defineComponent({ template: '<section><slot/><slot name="footer"/></section>' }) },
   } }); await flushPromises(); return wrapper
 }

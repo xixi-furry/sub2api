@@ -1,3 +1,4 @@
+import { moderationV2Messages } from '../../moderationV2'
 import landing from './landing'
 import common from './common'
 import dashboard from './dashboard'
@@ -7,6 +8,7 @@ import admin from './admin'
 import misc from './misc'
 
 export default {
+  moderationV2: moderationV2Messages.zh,
   ...landing,
   ...common,
   ...dashboard,
