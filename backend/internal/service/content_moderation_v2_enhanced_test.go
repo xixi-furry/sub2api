@@ -376,3 +376,24 @@ func TestModerationV2ResponsesTextPartsRequireOneJSONVerdict(t *testing.T) {
 	_, e = parseModerationV2Verdict(text+text, c.Providers[0])
 	require.Error(t, e)
 }
+
+func TestModerationV2ZeroRequestAmountStopsFreeChannels(t *testing.T) {
+	s, c, shared, store := enhancedFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("zero budget must not call even a zero-priced channel")
+	})
+	for i := range c.Providers {
+		c.Providers[i].Prices = ModerationV2Prices{Input: "0", Output: "0"}
+	}
+	c.Policy.MaxRequestAmount = "0"
+	result := s.evaluateModerationV2(context.Background(), v2Input("stop", "test"), c, shared, "admin_test", "stop")
+	require.Equal(t, "request_budget_exhausted", result.Reason)
+	require.Zero(t, result.Attempts)
+	require.Empty(t, store.reservations)
+	raw, e := json.Marshal(c)
+	require.NoError(t, e)
+	store.settings.values[SettingKeyContentModerationV2] = string(raw)
+	preview, e := s.PreviewModerationV2Input(context.Background(), ModerationV2TestInput{Text: "test"})
+	require.NoError(t, e)
+	require.False(t, preview.Fits)
+	require.Equal(t, "request_budget_exhausted", preview.Reason)
+}

@@ -58,7 +58,7 @@ func moderationV2StageOrder(ctx context.Context, cfg *ModerationV2Config, eviden
 		cost, _ := decimalValue(moderationV2WorstCost(*p, estimate))
 		if cfg.Policy.MaxRequestAmount != "" {
 			cap, _ := decimalValue(cfg.Policy.MaxRequestAmount)
-			if p.Prices.Input == "" || p.Prices.Output == "" || !p.OutputLimitVerified || cost.GreaterThan(cap) {
+			if cap.IsZero() || p.Prices.Input == "" || p.Prices.Output == "" || !p.OutputLimitVerified || cost.GreaterThan(cap) {
 				reason = "request_budget_exhausted"
 				continue
 			}
@@ -168,7 +168,7 @@ func (s *ContentModerationService) evaluateModerationV2Enhanced(ctx context.Cont
 			reserved, _ := decimalValue(amount)
 			if cfg.Policy.MaxRequestAmount != "" {
 				cap, _ := decimalValue(cfg.Policy.MaxRequestAmount)
-				if p.Prices.Input == "" || p.Prices.Output == "" || !p.OutputLimitVerified || spent.Add(reserved).GreaterThan(cap) {
+				if cap.IsZero() || p.Prices.Input == "" || p.Prices.Output == "" || !p.OutputLimitVerified || spent.Add(reserved).GreaterThan(cap) {
 					reason = "request_budget_exhausted"
 					continue
 				}

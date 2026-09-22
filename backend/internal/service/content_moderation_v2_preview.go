@@ -96,7 +96,7 @@ func (s *ContentModerationService) PreviewModerationV2Input(ctx context.Context,
 		if cfg.Policy.MaxRequestAmount != "" {
 			cap, _ := decimalValue(cfg.Policy.MaxRequestAmount)
 			amount, _ := decimalValue(out.ReservedAmount)
-			if out.ReservedAmount == "" || amount.GreaterThan(cap) {
+			if cap.IsZero() || out.ReservedAmount == "" || amount.GreaterThan(cap) {
 				out.Fits = false
 				out.Reason = "request_budget_exhausted"
 				continue
