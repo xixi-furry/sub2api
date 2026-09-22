@@ -121,7 +121,7 @@ func (r *contentModerationRepository) ReserveModerationV2(ctx context.Context, a
 		return service.ErrModerationV2ProviderUnavailable
 	}
 	var unavailable bool
-	if e = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM fork_moderation_attempts WHERE provider_id=$1 AND ((day=$2 AND limit_exceeded) OR (http_status IN (401,403) AND created_at>now()-interval '10 minutes') OR (http_status IN (429,529) AND created_at>now()-interval '1 minute') OR (http_status>=500 AND created_at>now()-interval '10 seconds')))`, a.ProviderID, day).Scan(&unavailable); e != nil {
+	if e = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM fork_moderation_attempts WHERE provider_id=$1 AND (limit_exceeded OR http_status>=400) AND ((day=$2 AND limit_exceeded) OR (http_status IN (401,403) AND created_at>now()-interval '10 minutes') OR (http_status IN (429,529) AND created_at>now()-interval '1 minute') OR (http_status>=500 AND created_at>now()-interval '10 seconds')))`, a.ProviderID, day).Scan(&unavailable); e != nil {
 		return e
 	}
 	if unavailable {

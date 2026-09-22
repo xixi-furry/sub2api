@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS fork_moderation_attempts (
 );
 CREATE INDEX IF NOT EXISTS idx_fork_moderation_attempts_day ON fork_moderation_attempts(day,provider_id,currency);
 CREATE INDEX IF NOT EXISTS idx_fork_moderation_attempts_pending ON fork_moderation_attempts(provider_id,expires_at) WHERE state='pending';
+CREATE INDEX IF NOT EXISTS idx_fork_moderation_attempts_failures ON fork_moderation_attempts(provider_id,created_at) WHERE limit_exceeded OR http_status>=400;
 CREATE TABLE IF NOT EXISTS fork_moderation_cache (
  key varchar(64) PRIMARY KEY, verdict jsonb NOT NULL, expires_at timestamptz NOT NULL
 );
