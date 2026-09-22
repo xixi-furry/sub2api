@@ -36,14 +36,12 @@ func (h *ContentModerationHandler) GetV2Usage(c *gin.Context) {
 	response.Success(c, data)
 }
 func (h *ContentModerationHandler) PreviewV2(c *gin.Context) {
-	var req struct {
-		Text string `json:"text"`
-	}
+	var req service.ModerationV2TestInput
 	if c.ShouldBindJSON(&req) != nil || len(req.Text) > 256*1024 {
 		response.BadRequest(c, "Text must fit in 256 KiB")
 		return
 	}
-	data, e := h.service.PreviewModerationV2(c.Request.Context(), req.Text)
+	data, e := h.service.PreviewModerationV2Input(c.Request.Context(), req)
 	if e != nil {
 		response.ErrorFrom(c, e)
 		return
@@ -51,14 +49,12 @@ func (h *ContentModerationHandler) PreviewV2(c *gin.Context) {
 	response.Success(c, data)
 }
 func (h *ContentModerationHandler) TestV2(c *gin.Context) {
-	var req struct {
-		Text string `json:"text"`
-	}
-	if c.ShouldBindJSON(&req) != nil || len(req.Text) == 0 || len(req.Text) > 256*1024 {
+	var req service.ModerationV2TestInput
+	if c.ShouldBindJSON(&req) != nil || len(req.Text) > 256*1024 {
 		response.BadRequest(c, "Provide 1–262144 bytes of text")
 		return
 	}
-	data, e := h.service.TestModerationV2(c.Request.Context(), req.Text)
+	data, e := h.service.TestModerationV2Input(c.Request.Context(), req)
 	if e != nil {
 		response.ErrorFrom(c, e)
 		return

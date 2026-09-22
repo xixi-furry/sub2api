@@ -1325,7 +1325,9 @@ func (s *ContentModerationService) worker(id int) {
 				}
 				s.asyncActive.Add(1)
 				defer s.asyncActive.Add(-1)
-				_ = s.checkModerationV2(ctx, task.input, task.v2, task.config, task.v2EventID)
+				auditCtx, auditCancel := context.WithTimeout(context.Background(), task.v2.requestTimeout())
+				_ = s.checkModerationV2(auditCtx, task.input, task.v2, task.config, task.v2EventID)
+				auditCancel()
 				s.asyncProcessed.Add(1)
 				return
 			}

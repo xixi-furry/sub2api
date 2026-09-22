@@ -36,6 +36,15 @@ type ModerationV2Prices struct {
 	PerRequest  string `json:"per_request"`
 }
 type ModerationV2Provider struct {
+	StrictDecision      bool               `json:"-"`
+	Purpose             string             `json:"purpose"`
+	APIFormat           string             `json:"api_format"`
+	Stream              bool               `json:"stream"`
+	ReasoningParameter  string             `json:"reasoning_parameter"`
+	ReasoningEffort     string             `json:"reasoning_effort"`
+	ThinkingEnabled     bool               `json:"thinking_enabled"`
+	HeaderTimeoutMS     int                `json:"header_timeout_ms"`
+	IdleTimeoutMS       int                `json:"idle_timeout_ms"`
 	AuditValidated      bool               `json:"audit_validated"`
 	ID                  string             `json:"id"`
 	Name                string             `json:"name"`
@@ -59,6 +68,7 @@ type ModerationV2Provider struct {
 	Limits              ModerationV2Limits `json:"limits"`
 }
 type ModerationV2Config struct {
+	Policy           ModerationV2Policy     `json:"policy"`
 	Routing          string                 `json:"routing"`
 	Revision         int64                  `json:"revision"`
 	Enabled          bool                   `json:"enabled"`
@@ -98,22 +108,28 @@ type ModerationV2Settlement struct {
 	HTTPStatus    int
 }
 type ModerationV2Verdict struct {
-	Flagged        bool    `json:"flagged"`
-	Score          float64 `json:"score"`
-	Reason         string  `json:"reason"`
-	DecisionSource string  `json:"decision_source"`
-	ProviderID     string  `json:"provider_id"`
-	Model          string  `json:"model"`
-	Threshold      float64 `json:"threshold"`
+	Decision       string   `json:"decision,omitempty"`
+	NeedsContext   bool     `json:"needs_context,omitempty"`
+	EvidenceIDs    []string `json:"evidence_ids,omitempty"`
+	Flagged        bool     `json:"flagged"`
+	Score          float64  `json:"score"`
+	Reason         string   `json:"reason"`
+	DecisionSource string   `json:"decision_source"`
+	ProviderID     string   `json:"provider_id"`
+	Model          string   `json:"model"`
+	Threshold      float64  `json:"threshold"`
 }
 type ModerationV2Result struct {
-	Status         string               `json:"status"`
-	Reason         string               `json:"reason"`
-	CacheHit       bool                 `json:"cache_hit"`
-	Attempts       int                  `json:"attempts"`
-	EstimatedInput int                  `json:"estimated_input"`
-	Verdict        *ModerationV2Verdict `json:"verdict,omitempty"`
-	Usage          *ModerationV2Usage   `json:"usage,omitempty"`
+	Coverage       *ModerationV2Coverage `json:"coverage,omitempty"`
+	Traces         []ModerationV2Trace   `json:"traces,omitempty"`
+	TotalMS        int64                 `json:"total_ms"`
+	Status         string                `json:"status"`
+	Reason         string                `json:"reason"`
+	CacheHit       bool                  `json:"cache_hit"`
+	Attempts       int                   `json:"attempts"`
+	EstimatedInput int                   `json:"estimated_input"`
+	Verdict        *ModerationV2Verdict  `json:"verdict,omitempty"`
+	Usage          *ModerationV2Usage    `json:"usage,omitempty"`
 }
 type ModerationV2UsageRow struct {
 	ProviderID      string `json:"provider_id"`
@@ -146,7 +162,7 @@ type ModerationV2Repository interface {
 }
 
 func defaultModerationV2Config() *ModerationV2Config {
-	return &ModerationV2Config{Currency: "CNY", MaxAttempts: 2, CacheTTLSeconds: 900, Providers: []ModerationV2Provider{}, FallbackIDs: []string{}}
+	return &ModerationV2Config{Policy: defaultModerationV2Policy(), Currency: "CNY", MaxAttempts: 2, CacheTTLSeconds: 900, Providers: []ModerationV2Provider{}, FallbackIDs: []string{}}
 }
 func parseModerationV2Config(raw string) (*ModerationV2Config, error) {
 	cfg := defaultModerationV2Config()
@@ -295,6 +311,9 @@ func decimalValue(raw string) (decimal.Decimal, error) {
 }
 func validateModerationV2Config(ctx context.Context, c *ModerationV2Config) error {
 	bad := func(s string) error { return infraerrors.BadRequest("INVALID_MODERATION_V2", s) }
+	if err := validateModerationV2Policy(c); err != nil {
+		return bad(err.Error())
+	}
 	if c.Routing == "" {
 		c.Routing = "priority"
 	}
@@ -347,10 +366,13 @@ func validateModerationV2Config(ctx context.Context, c *ModerationV2Config) erro
 				return bad(err.Error())
 			}
 		}
+		if err := validateModerationV2Protocol(*p); err != nil {
+			return bad(err.Error())
+		}
 		if !p.Enabled {
 			continue
 		}
-		if p.TimeoutMS < 500 || p.TimeoutMS > 30000 || p.MaxInputTokens < 256 || p.MaxInputTokens > 65536 || p.MaxOutputTokens < 32 || p.MaxOutputTokens > 4096 || p.MaxConcurrent < 1 || p.MaxConcurrent > 100 {
+		if p.TimeoutMS < 500 || p.TimeoutMS > 180000 || p.MaxInputTokens < 256 || p.MaxInputTokens > 262144 || p.MaxOutputTokens < 32 || p.MaxOutputTokens > 32768 || p.MaxConcurrent < 1 || p.MaxConcurrent > 100 {
 			return bad("服务超时、输入、输出或并发上限无效 / Invalid provider limits")
 		}
 		if p.OutputParameter != "max_tokens" && p.OutputParameter != "max_completion_tokens" {
@@ -368,7 +390,7 @@ func validateModerationV2Config(ctx context.Context, c *ModerationV2Config) erro
 		if c.Enabled && len(p.APIKeys) == 0 {
 			return bad("启用的服务需要 API Key / Enabled providers require keys")
 		}
-		if (c.Limits.DailyAmount != "" || p.Limits.DailyAmount != "") && (p.Prices.Input == "" || p.Prices.Output == "" || !p.OutputLimitVerified) {
+		if (c.Limits.DailyAmount != "" || p.Limits.DailyAmount != "" || c.Policy.MaxRequestAmount != "") && (p.Prices.Input == "" || p.Prices.Output == "" || !p.OutputLimitVerified) {
 			return bad("使用金额预算前请填写价格，并确认运营商支持输出上限 / Monetary caps require prices and verified output limits")
 		}
 	}
@@ -384,6 +406,9 @@ func validateModerationV2Config(ctx context.Context, c *ModerationV2Config) erro
 		}
 		return nil
 	}
+	if c.Policy.Mode == "quality" {
+		return nil
+	}
 	route := append([]string{c.PrimaryID}, c.FallbackIDs...)
 	used := map[string]bool{}
 	for _, id := range route {
@@ -393,6 +418,9 @@ func validateModerationV2Config(ctx context.Context, c *ModerationV2Config) erro
 		p := c.provider(id)
 		if p == nil || used[id] || (c.Enabled && !p.Enabled) {
 			return bad("主服务和备用服务必须存在、启用且不重复 / Invalid routing")
+		}
+		if c.Enabled && c.enhanced() && (!p.AuditValidated || (moderationProviderPurpose(*p) != "primary" && moderationProviderPurpose(*p) != "both")) {
+			return bad("初审渠道需验证审核效果并设置初审用途 / Initial channels must be validated for initial audits")
 		}
 		used[id] = true
 	}

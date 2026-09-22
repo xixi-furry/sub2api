@@ -1,10 +1,14 @@
+import type { AuditCoverage, AuditTrace } from './moderationV2'
 import type { AuditConfig } from './moderationV2'
 import { apiClient } from '../client'
 
 export type ModerationMode = 'off' | 'observe' | 'pre_block'
 export type ModerationEngine = 'openai' | 'typesafe'
 export interface ModerationEngineMeta {
-  decision_source?: 'confidence' | 'flagged'
+  decision_source?: 'confidence' | 'flagged' | 'structured'
+  coverage?: AuditCoverage
+  traces?: AuditTrace[]
+  total_ms?: number
   reason?: string
   engine: ModerationEngine
   model: string

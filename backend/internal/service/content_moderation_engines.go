@@ -39,15 +39,18 @@ type UpdateContentModerationEngineInput struct {
 }
 
 type ContentModerationEngineMeta struct {
-	ProviderID     string `json:"provider_id,omitempty"`
-	Status         string `json:"status,omitempty"`
-	CacheHit       bool   `json:"cache_hit,omitempty"`
-	DecisionSource string `json:"decision_source,omitempty"`
-	Reason         string `json:"reason,omitempty"`
-	Engine         string `json:"engine"`
-	Model          string `json:"model"`
-	RulesVersion   string `json:"rules_version"`
-	SkippedImages  int    `json:"skipped_images"`
+	Coverage       *ModerationV2Coverage `json:"coverage,omitempty"`
+	Traces         []ModerationV2Trace   `json:"traces,omitempty"`
+	TotalMS        int64                 `json:"total_ms,omitempty"`
+	ProviderID     string                `json:"provider_id,omitempty"`
+	Status         string                `json:"status,omitempty"`
+	CacheHit       bool                  `json:"cache_hit,omitempty"`
+	DecisionSource string                `json:"decision_source,omitempty"`
+	Reason         string                `json:"reason,omitempty"`
+	Engine         string                `json:"engine"`
+	Model          string                `json:"model"`
+	RulesVersion   string                `json:"rules_version"`
+	SkippedImages  int                   `json:"skipped_images"`
 }
 
 func moderationEngine(engine string) string {

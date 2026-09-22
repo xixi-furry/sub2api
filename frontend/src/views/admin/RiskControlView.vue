@@ -1166,6 +1166,16 @@
         @close="closeInputDetail"
       >
         <div v-if="inputDetailRow" class="space-y-5">
+          <div v-if="inputDetailRow.engine_meta?.coverage" class="rounded-xl bg-primary-50 p-3 text-sm dark:bg-primary-950/30">
+            {{ t('moderationV2.coverageSummary', { selected: inputDetailRow.engine_meta.coverage.selected_messages, omitted: inputDetailRow.engine_meta.coverage.omitted_messages, bytes: inputDetailRow.engine_meta.coverage.selected_bytes }) }}
+          </div>
+          <div v-if="inputDetailRow.engine_meta?.traces?.length" class="space-y-2">
+            <article v-for="(trace, index) in inputDetailRow.engine_meta.traces" :key="index" class="rounded-lg border border-gray-200 p-3 text-sm dark:border-dark-700">
+              <p>{{ trace.stage === 'review' ? t('moderationV2.reviewPurpose') : t('moderationV2.primaryPurpose') }} · {{ trace.provider_id }}</p>
+              <p class="mt-1 text-xs text-gray-500">{{ t('moderationV2.responseWait') }}: {{ trace.header_ms }} ms · {{ t('moderationV2.firstText') }}: {{ trace.first_text_ms === undefined ? '—' : `${trace.first_text_ms} ms` }} · {{ t('moderationV2.totalTime') }}: {{ trace.total_ms }} ms</p>
+              <p v-if="trace.reason" class="mt-1 text-xs">{{ te(`moderationV2.reasons.${trace.reason}`) ? t(`moderationV2.reasons.${trace.reason}`) : trace.reason }}</p>
+            </article>
+          </div>
           <p v-if="inputDetailRow.engine_meta?.reason" class="text-sm text-gray-700 dark:text-dark-200">{{ inputDetailRow.engine_meta.reason }}</p>
           <div class="text-sm break-words" data-test="audit-engine-meta">
             <span class="font-medium">{{ t('admin.riskControl.auditSource') }}: </span>
@@ -1310,7 +1320,7 @@ const riskThresholdDefaults: Record<string, number> = {
 }
 const riskThresholdCategories = Object.keys(riskThresholdDefaults)
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const appStore = useAppStore()
 const channels = ref<AuditConfig>()
 const defaultBlockMessage = () => t('admin.riskControl.defaultBlockMessage')

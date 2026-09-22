@@ -8,9 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -37,10 +36,11 @@ func moderationV2CacheKey(in ContentModerationCheckInput, cfg *ModerationV2Confi
 	scope, _ := json.Marshal(shared)
 	// Hash the full body before any extraction/truncation, including conversation
 	// branches, alongside authenticated identities and immutable policy snapshots.
-	return moderationV2Hash(fmt.Sprint(in.UserID), fmt.Sprint(in.APIKeyID), fmt.Sprint(contentModerationLogGroupID(in.GroupID)), in.Protocol, string(in.Body), string(policy), string(scope))
+	return moderationV2Hash("audit-context-v1", fmt.Sprint(in.UserID), fmt.Sprint(in.APIKeyID), fmt.Sprint(contentModerationLogGroupID(in.GroupID)), in.Protocol, string(in.Body), string(policy), string(scope))
 }
 func buildModerationV2Payload(ctx context.Context, p ModerationV2Provider, text string) ([]byte, int, error) {
-	raw, e := buildCustomModerationPayload(ctx, p.legacyConfig(), text)
+	legacy := p.legacyConfig()
+	raw, e := buildCustomModerationPayload(ctx, legacy, text)
 	if e != nil {
 		return nil, 0, e
 	}
@@ -65,6 +65,7 @@ func buildModerationV2Payload(ctx context.Context, p ModerationV2Provider, text 
 	if json.Unmarshal(body["messages"], &messages) != nil || len(messages) == 0 || len(messages) > 32 {
 		return nil, 0, errors.New("invalid messages")
 	}
+	hasEvidence := false
 	for _, m := range messages {
 		if m.Role != "system" && m.Role != "user" && m.Role != "assistant" && m.Role != "developer" {
 			return nil, 0, errors.New("unsupported message role")
@@ -73,12 +74,21 @@ func buildModerationV2Payload(ctx context.Context, p ModerationV2Provider, text 
 		if json.Unmarshal(m.Content, &content) != nil {
 			return nil, 0, errors.New("v2 currently supports text-only message content")
 		}
+		if m.Role == "user" && (strings.Contains(content, text) || strings.Contains(content, strings.NewReplacer("<", "&lt;", ">", "&gt;").Replace(text))) {
+			hasEvidence = true
+		}
+	}
+	if p.StrictDecision && !hasEvidence {
+		return nil, 0, errors.New("enhanced audit payload must preserve complete text evidence")
 	}
 	delete(body, "max_tokens")
 	delete(body, "max_completion_tokens")
 	body[p.OutputParameter] = json.RawMessage(fmt.Sprint(p.MaxOutputTokens))
 	body["stream"] = json.RawMessage("false")
 	body["n"] = json.RawMessage("1")
+	if e = adaptModerationV2Payload(body, p); e != nil {
+		return nil, 0, e
+	}
 	raw, e = json.Marshal(body)
 	if e != nil {
 		return nil, 0, e
@@ -127,70 +137,14 @@ func parseModerationV2Usage(raw []byte) *ModerationV2Usage {
 }
 
 type moderationV2CallResult struct {
-	verdict    *ModerationV2Verdict
-	usage      *ModerationV2Usage
-	httpStatus int
-	retryable  bool
-	reason     string
-}
-
-func (s *ContentModerationService) callModerationV2(ctx context.Context, p ModerationV2Provider, payload []byte) moderationV2CallResult {
-	failed := moderationV2CallResult{reason: "provider_unavailable", retryable: true}
-	cfg := p.legacyConfig()
-	endpoint, e := moderationEndpoint(cfg)
-	if e != nil {
-		failed.retryable = false
-		failed.reason = "invalid_endpoint"
-		return failed
-	}
-	client, e := s.moderationHTTPClient(ctx, cfg)
-	if e != nil {
-		failed.reason = "proxy_unavailable"
-		return failed
-	}
-	// Never forward bearer credentials or repeat a paid request across redirects.
-	owned := *client
-	owned.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	callCtx, cancel := context.WithTimeout(ctx, time.Duration(p.TimeoutMS)*time.Millisecond)
-	defer cancel()
-	request, e := http.NewRequestWithContext(callCtx, http.MethodPost, endpoint, bytes.NewReader(payload))
-	if e != nil {
-		return failed
-	}
-	key := p.APIKeys[int(s.apiKeyCursor.Add(1)-1)%len(p.APIKeys)]
-	request.Header.Set("Authorization", "Bearer "+key)
-	request.Header.Set("Content-Type", "application/json")
-	//nolint:gosec // URL is administrator-configured; private operator endpoints are supported. Redirects are disabled.
-	response, e := owned.Do(request)
-	if e != nil {
-		return failed
-	}
-	defer func() { _ = response.Body.Close() }()
-	failed.httpStatus = response.StatusCode
-	if response.StatusCode != http.StatusOK {
-		failed.reason = "provider_http_error"
-		failed.retryable = response.StatusCode == 429 || response.StatusCode >= 500
-		return failed
-	}
-	raw, e := io.ReadAll(io.LimitReader(response.Body, maxModerationResponseBytes+1))
-	if e != nil || len(raw) > maxModerationResponseBytes {
-		failed.reason = "invalid_response"
-		return failed
-	}
-	failed.usage = parseModerationV2Usage(raw)
-	result, e := parseChatModerationResponse(bytes.NewReader(raw), cfg)
-	if e != nil {
-		failed.reason = "invalid_verdict"
-		return failed
-	}
-	score := result.CategoryScores[customModerationCategory]
-	failed.verdict = &ModerationV2Verdict{Flagged: result.Flagged, Score: score, ProviderID: p.ID, Model: p.Model, Threshold: p.Threshold}
-	if result.EngineMeta != nil {
-		failed.verdict.Reason = result.EngineMeta.Reason
-		failed.verdict.DecisionSource = result.EngineMeta.DecisionSource
-	}
-	failed.reason = ""
-	return failed
+	verdict     *ModerationV2Verdict
+	usage       *ModerationV2Usage
+	httpStatus  int
+	retryable   bool
+	reason      string
+	headerMS    int64
+	firstTextMS *int64
+	totalMS     int64
 }
 
 func moderationV2Content(in ContentModerationCheckInput) (ContentModerationInput, string) {
@@ -246,6 +200,11 @@ func moderationV2Content(in ContentModerationCheckInput) (ContentModerationInput
 	return content, ""
 }
 func (s *ContentModerationService) evaluateModerationV2(ctx context.Context, in ContentModerationCheckInput, cfg *ModerationV2Config, shared *ContentModerationConfig, source, eventID string) *ModerationV2Result {
+	if cfg.enhanced() {
+		return s.evaluateModerationV2Enhanced(ctx, in, cfg, shared, source, eventID)
+	}
+	ctx, auditCancel := context.WithTimeout(ctx, cfg.requestTimeout())
+	defer auditCancel()
 	out := &ModerationV2Result{Status: "unresolved"}
 	store, e := s.moderationV2Store()
 	if e != nil {
@@ -408,7 +367,7 @@ func (s *ContentModerationService) recordModerationV2(ctx context.Context, in Co
 	}
 	content := extractContentModerationInput(in.Protocol, in.Body, false)
 	log := s.buildLog(in, shared, decision.Action, decision.Flagged, decision.HighestCategory, decision.HighestScore, decision.CategoryScores, content.Text, nil, nil, result.Reason)
-	log.EngineMeta = &ContentModerationEngineMeta{Engine: ContentModerationEngineOpenAI, Status: result.Status, CacheHit: result.CacheHit}
+	log.EngineMeta = &ContentModerationEngineMeta{Engine: ContentModerationEngineOpenAI, Status: result.Status, CacheHit: result.CacheHit, Coverage: result.Coverage, Traces: result.Traces, TotalMS: result.TotalMS}
 	if v := result.Verdict; v != nil {
 		log.ThresholdSnapshot = map[string]float64{customModerationCategory: v.Threshold}
 		log.EngineMeta.ProviderID = v.ProviderID
@@ -461,12 +420,15 @@ func (s *ContentModerationService) dispatchModerationV2(ctx context.Context, in 
 }
 
 type ModerationV2Preview struct {
-	ProviderID     string `json:"provider_id"`
-	EstimatedInput int    `json:"estimated_input"`
-	MaxOutput      int    `json:"max_output"`
-	ReservedAmount string `json:"reserved_amount"`
-	Fits           bool   `json:"fits"`
-	Reason         string `json:"reason"`
+	Stage          string                 `json:"stage,omitempty"`
+	Coverage       *ModerationV2Coverage  `json:"coverage,omitempty"`
+	Fragments      []ModerationV2Fragment `json:"fragments,omitempty"`
+	ProviderID     string                 `json:"provider_id"`
+	EstimatedInput int                    `json:"estimated_input"`
+	MaxOutput      int                    `json:"max_output"`
+	ReservedAmount string                 `json:"reserved_amount"`
+	Fits           bool                   `json:"fits"`
+	Reason         string                 `json:"reason"`
 }
 
 func (s *ContentModerationService) PreviewModerationV2(ctx context.Context, text string) (*ModerationV2Preview, error) {
@@ -500,6 +462,13 @@ func (s *ContentModerationService) PreviewModerationV2(ctx context.Context, text
 	return &ModerationV2Preview{ProviderID: p.ID, EstimatedInput: estimate, MaxOutput: p.MaxOutputTokens, ReservedAmount: amount, Fits: e == nil, Reason: reason}, nil
 }
 func (s *ContentModerationService) TestModerationV2(ctx context.Context, text string) (*ModerationV2Result, error) {
+	return s.TestModerationV2Input(ctx, ModerationV2TestInput{Text: text})
+}
+func (s *ContentModerationService) TestModerationV2Input(ctx context.Context, req ModerationV2TestInput) (*ModerationV2Result, error) {
+	input, inputErr := req.checkInput()
+	if inputErr != nil {
+		return nil, inputErr
+	}
 	cfg, e := s.loadModerationV2Config(ctx)
 	if e != nil {
 		return nil, e
@@ -513,8 +482,6 @@ func (s *ContentModerationService) TestModerationV2(ctx context.Context, text st
 	if e != nil {
 		return nil, e
 	}
-	body, _ := json.Marshal(map[string]any{"input": text})
-	input := ContentModerationCheckInput{RequestID: uuid.NewString(), Protocol: ContentModerationProtocolOpenAIResponses, Body: body}
 	eventID := moderationV2EventID(input)
 	result := s.evaluateModerationV2(ctx, input, cfg, old, "admin_test", eventID)
 	if store, e := s.moderationV2Store(); e == nil {
