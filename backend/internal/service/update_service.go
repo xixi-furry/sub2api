@@ -30,7 +30,6 @@ var (
 const (
 	updateCacheKey = "update_check_cache"
 	updateCacheTTL = 1200 // 20 minutes
-	githubRepo     = "Wei-Shaw/sub2api"
 
 	// Security: allowed download domains for updates
 	allowedDownloadHost = "github.com"
@@ -649,6 +648,13 @@ func compareVersions(current, latest string) int {
 		if currentParts[i] > latestParts[i] {
 			return 1
 		}
+	}
+	currentFix, latestFix := forkRevision(current), forkRevision(latest)
+	if currentFix < latestFix {
+		return -1
+	}
+	if currentFix > latestFix {
+		return 1
 	}
 	return 0
 }

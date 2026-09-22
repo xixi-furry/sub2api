@@ -3,6 +3,11 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -12,6 +17,8 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.sha }}
       - name: Check deployment scripts
         run: |
           /bin/bash -n deploy/apple-container.sh
@@ -25,6 +32,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.sha }}
       - uses: actions/setup-go@v6
         with:
           go-version-file: backend/go.mod
@@ -45,6 +54,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.sha }}
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -58,6 +69,8 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: pnpm install --frozen-lockfile
+      - name: Fork regression tests
+        run: pnpm --dir frontend exec vitest run src/views/admin/__tests__/RiskControlView.spec.ts
       - name: Frontend typecheck and critical vitest
         run: make test-frontend
 
@@ -65,6 +78,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.sha }}
       - uses: actions/setup-go@v6
         with:
           go-version-file: backend/go.mod
@@ -85,9 +100,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.sha }}
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - run: python -m pip install -r .github/release-tools/requirements-release.txt
       - run: python -m unittest discover -s .github/release-tools -p 'test_release_matrix.py'
       - run: bash -n .github/release-tools/release-images.sh
+
+      - name: Fork version planning tests
+        run: python -m unittest discover -s .github/fork-tools -p 'test_*.py'

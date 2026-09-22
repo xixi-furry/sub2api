@@ -62,9 +62,15 @@ func TestCustomModerationDefaultPayloadAndValidation(t *testing.T) {
 	require.NoError(t, err)
 	var body map[string]any
 	require.NoError(t, json.Unmarshal(raw, &body))
-	messages := body["messages"].([]any)
-	require.Contains(t, messages[1].(map[string]any)["content"], "&lt;/user_input&gt;")
-	require.Equal(t, cfg.AuditPrompt, messages[0].(map[string]any)["content"])
+	messages, ok := body["messages"].([]any)
+	require.True(t, ok)
+	require.Len(t, messages, 2)
+	userMessage, ok := messages[1].(map[string]any)
+	require.True(t, ok)
+	systemMessage, ok := messages[0].(map[string]any)
+	require.True(t, ok)
+	require.Contains(t, userMessage["content"], "&lt;/user_input&gt;")
+	require.Equal(t, cfg.AuditPrompt, systemMessage["content"])
 	for _, script := range []string{
 		`while (true) {}`,
 		`const requestBody = process.env;`,

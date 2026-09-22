@@ -1,0 +1,69 @@
+name: Sync Official Releases
+
+on:
+  schedule:
+    - cron: '23 21 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: fork-upstream-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    if: github.repository == 'xixi-furry/sub2api'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      changed: ${{ steps.merge.outputs.changed }}
+      sha: ${{ steps.merge.outputs.sha }}
+      base: ${{ steps.merge.outputs.base }}
+      branch: ${{ steps.merge.outputs.branch }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Merge newer stable upstream into a candidate branch
+        id: merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python .github/fork-tools/sync.py
+
+  verify:
+    needs: prepare
+    if: needs.prepare.outputs.changed == 'true'
+    uses: ./.github/workflows/backend-ci.yml
+    with:
+      ref: ${{ needs.prepare.outputs.sha }}
+
+  integrate:
+    needs: [prepare, verify]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CANDIDATE_SHA: ${{ needs.prepare.outputs.sha }}
+      ORIGINAL_MAIN: ${{ needs.prepare.outputs.base }}
+      CANDIDATE_BRANCH: ${{ needs.prepare.outputs.branch }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          fetch-depth: 0
+      - name: Fast-forward main only if it has not changed
+        run: |
+          git fetch origin main
+          test "$(git rev-parse origin/main)" = "$ORIGINAL_MAIN"
+          git merge-base --is-ancestor origin/main "$CANDIDATE_SHA"
+          git push origin "$CANDIDATE_SHA:refs/heads/main"
+      - name: Publish next fork revision from this verified commit
+        run: gh workflow run fork-release.yml --ref main -f "ref=$CANDIDATE_SHA"
+      - name: Remove the successfully integrated candidate branch
+        run: git push origin --delete "$CANDIDATE_BRANCH"

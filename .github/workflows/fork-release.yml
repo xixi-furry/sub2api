@@ -1,0 +1,217 @@
+name: Fork Release
+
+on:
+  push:
+    tags:
+      - 'v*-fix*'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Source branch or commit (default main)'
+        default: main
+        type: string
+      tag:
+        description: 'Optional vX.Y.Z-fixN; blank selects the next revision'
+        default: ''
+        type: string
+
+concurrency:
+  group: fork-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    if: github.repository == 'xixi-furry/sub2api'
+    runs-on: ubuntu-24.04
+    outputs:
+      sha: ${{ steps.version.outputs.sha }}
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+      upstream_version: ${{ steps.version.outputs.upstream_version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 0
+      - name: Require a commit on main
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor HEAD origin/main
+      - name: Resolve immutable version
+        id: version
+        env:
+          REQUESTED_TAG: ${{ inputs.tag || (github.ref_type == 'tag' && github.ref_name) || '' }}
+        run: python .github/fork-tools/version.py --tag "$REQUESTED_TAG"
+      - name: Prevent overwriting a published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if gh release view "$RELEASE_TAG" --json tagName >/dev/null 2>&1; then
+            echo "::error::This version is already published. Use the next fix revision."
+            exit 1
+          fi
+
+  verify:
+    needs: prepare
+    uses: ./.github/workflows/backend-ci.yml
+    with:
+      ref: ${{ needs.prepare.outputs.sha }}
+
+  frontend:
+    needs: [prepare, verify]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile && pnpm run build
+        working-directory: frontend
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fork-frontend
+          path: backend/internal/web/dist/
+          retention-days: 2
+
+  image:
+    needs: [prepare, frontend]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      SOURCE_SHA: ${{ needs.prepare.outputs.sha }}
+      ARCH: ${{ matrix.arch }}
+      IMAGE: ghcr.io/xixi-furry/sub2api
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: fork-frontend
+          path: backend/internal/web/dist/
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Build fork binary and upgrade archive
+        run: |
+          mkdir -p .fork-context/deploy .fork-context/backend artifacts
+          BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" go -C backend build -trimpath -tags embed \
+            -ldflags="-s -w -X main.Version=$VERSION -X main.Commit=$SOURCE_SHA -X main.Date=$BUILD_DATE -X main.BuildType=release -X github.com/Wei-Shaw/sub2api/internal/service.githubRepo=xixi-furry/sub2api" \
+            -o ../.fork-context/sub2api ./cmd/server
+          tar -C .fork-context -czf "artifacts/sub2api_${VERSION}_linux_${ARCH}.tar.gz" sub2api
+          cp Dockerfile.goreleaser .fork-context/Dockerfile
+          cp deploy/docker-entrypoint.sh .fork-context/deploy/
+          cp -R backend/resources .fork-context/backend/
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ github.token }}
+      - name: Build and load image for smoke test
+        uses: docker/build-push-action@v6
+        with:
+          context: .fork-context
+          platforms: linux/${{ matrix.arch }}
+          load: true
+          tags: ${{ env.IMAGE }}:build-${{ github.run_id }}-${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/xixi-furry/sub2api
+            org.opencontainers.image.version=${{ env.VERSION }}
+            org.opencontainers.image.revision=${{ env.SOURCE_SHA }}
+      - name: Verify packaged binary, database setup and HTTP health
+        run: bash .github/fork-tools/smoke-image.sh
+      - name: Push verified temporary architecture image
+        run: docker push "$IMAGE:build-${{ github.run_id }}-$ARCH"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fork-binary-${{ matrix.arch }}
+          path: artifacts/
+          retention-days: 2
+
+  publish:
+    needs: [prepare, image]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+      SOURCE_SHA: ${{ needs.prepare.outputs.sha }}
+      UPSTREAM_VERSION: ${{ needs.prepare.outputs.upstream_version }}
+      IMAGE: ghcr.io/xixi-furry/sub2api
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: fork-binary-*
+          path: artifacts
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ github.token }}
+      - name: Publish versioned multi-platform image
+        run: |
+          docker buildx imagetools create \
+            --tag "$IMAGE:$VERSION" --tag "$IMAGE:$RELEASE_TAG" \
+            "$IMAGE:build-${{ github.run_id }}-amd64" "$IMAGE:build-${{ github.run_id }}-arm64"
+          docker buildx imagetools inspect "$IMAGE:$VERSION"
+      - name: Create immutable tag and stable GitHub release
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if ! git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            git tag -a "$RELEASE_TAG" "$SOURCE_SHA" -m "Sub2API $RELEASE_TAG"
+            git push origin "refs/tags/$RELEASE_TAG"
+          fi
+          (cd artifacts && sha256sum sub2api_*.tar.gz > checksums.txt)
+          cat > release-notes.md <<EOF
+          基于官方 v$UPSTREAM_VERSION，保留本仓库的自定义审核配置与柔和紫色主题。
+
+          镜像（支持 linux/amd64、linux/arm64）：
+          \`ghcr.io/xixi-furry/sub2api:$VERSION\`
+
+          源码提交：$SOURCE_SHA
+
+          通过完整 CI，并验证两种架构的镜像版本与 /health。
+          使用说明：[CUSTOMIZATION.md](https://github.com/xixi-furry/sub2api/blob/$RELEASE_TAG/CUSTOMIZATION.md)
+
+          更新容器时保留原数据库、数据卷和环境变量。审核服务商、模型、Key 与两段代码需要在后台配置。
+          EOF
+          gh release create "$RELEASE_TAG" artifacts/* --verify-tag --title "$RELEASE_TAG" --notes-file release-notes.md --latest --prerelease=false
+      - name: Advance latest only after successful publication
+        run: |
+          docker buildx imagetools create --tag "$IMAGE:latest" "$IMAGE:$VERSION"
+          echo "Published $IMAGE:$VERSION" >> "$GITHUB_STEP_SUMMARY"

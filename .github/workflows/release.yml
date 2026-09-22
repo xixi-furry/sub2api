@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+      - '!v*-fix*'
   workflow_dispatch:
     inputs:
       tag:
@@ -34,6 +35,7 @@ env:
 
 jobs:
   prepare:
+    if: github.repository == 'Wei-Shaw/sub2api'
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.plan.outputs.sha }}
