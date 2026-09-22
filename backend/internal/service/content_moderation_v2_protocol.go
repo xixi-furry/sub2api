@@ -75,6 +75,9 @@ func adaptModerationV2Payload(body map[string]json.RawMessage, p ModerationV2Pro
 			delete(body, "enable_thinking")
 			switch p.ReasoningParameter {
 			case "effort":
+				// Chat reasoning endpoints can also reject the legacy temperature=0.
+				delete(body, "temperature")
+				delete(body, "top_p")
 				set("reasoning_effort", p.ReasoningEffort)
 			case "thinking":
 				typ := "disabled"
@@ -142,10 +145,10 @@ func moderationV2ResponseText(raw []byte) (string, error) {
 			texts = append(texts, part.Get("text").String())
 		}
 	}
-	if len(texts) != 1 {
+	if len(texts) == 0 {
 		return "", errors.New("expected one final verdict")
 	}
-	return texts[0], nil
+	return strings.Join(texts, ""), nil
 }
 func parseModerationV2Verdict(text string, p ModerationV2Provider) (*ModerationV2Verdict, error) {
 	text = strings.TrimSpace(text)

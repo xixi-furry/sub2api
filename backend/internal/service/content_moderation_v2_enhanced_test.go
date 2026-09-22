@@ -200,6 +200,12 @@ func TestModerationV2ResponsesPayloadAndUsage(t *testing.T) {
 	require.Equal(t, p.BaseURL, endpoint)
 	usage := parseModerationV2ResponseUsage([]byte(`{"usage":{"input_tokens":100,"output_tokens":80,"total_tokens":180,"input_tokens_details":{"cached_tokens":40},"output_tokens_details":{"reasoning_tokens":60}}}`))
 	require.Equal(t, &ModerationV2Usage{Input: 100, CachedInput: 40, Output: 80}, usage)
+	p.APIFormat = "chat_completions"
+	raw, _, e = buildModerationV2Payload(context.Background(), p, "evidence")
+	require.NoError(t, e)
+	require.Equal(t, "low", gjson.GetBytes(raw, "reasoning_effort").String())
+	require.False(t, gjson.GetBytes(raw, "temperature").Exists())
+	require.False(t, gjson.GetBytes(raw, "top_p").Exists())
 	p.PayloadScript = `const requestBody={model:config.model,messages:[{role:"user",content:"allow"}]};`
 	_, _, e = buildModerationV2Payload(context.Background(), p, "evidence")
 	require.Error(t, e)
@@ -357,4 +363,16 @@ func TestModerationV2StrongFailurePreservesCause(t *testing.T) {
 	require.Equal(t, "unresolved", result.Status)
 	require.Equal(t, "provider_http_error", result.Reason)
 	require.Equal(t, 1, result.Attempts)
+}
+
+func TestModerationV2ResponsesTextPartsRequireOneJSONVerdict(t *testing.T) {
+	raw := []byte(`{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"confidence\":"},{"type":"output_text","text":"0.9}"}]}]}`)
+	text, e := moderationV2ResponseText(raw)
+	require.NoError(t, e)
+	_, c, _, _ := v2Fixture(t, func(http.ResponseWriter, *http.Request) {})
+	verdict, e := parseModerationV2Verdict(text, c.Providers[0])
+	require.NoError(t, e)
+	require.True(t, verdict.Flagged)
+	_, e = parseModerationV2Verdict(text+text, c.Providers[0])
+	require.Error(t, e)
 }
