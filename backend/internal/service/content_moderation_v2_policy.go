@@ -98,7 +98,7 @@ func validateModerationV2Protocol(p ModerationV2Provider) error {
 		return errors.New("invalid reasoning parameter")
 	}
 	if p.APIFormat == "responses" && p.ReasoningParameter != "" && p.ReasoningParameter != "none" && p.ReasoningParameter != "effort" {
-		return errors.New("Responses only supports the reasoning effort option")
+		return errors.New("responses only supports the reasoning effort option")
 	}
 	if p.ReasoningParameter == "effort" {
 		switch p.ReasoningEffort {

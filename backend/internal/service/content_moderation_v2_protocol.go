@@ -290,7 +290,7 @@ func readModerationV2Stream(reader io.Reader, responses bool, start time.Time) (
 						ms := time.Since(start).Milliseconds()
 						first = &ms
 					}
-					text.WriteString(delta)
+					_, _ = text.WriteString(delta)
 				}
 				if f := c.Get("finish_reason"); f.Exists() && f.Type != gjson.Null {
 					if f.String() != "stop" {

@@ -349,3 +349,12 @@ func TestModerationV2EnhancedAmountSharedAcrossStages(t *testing.T) {
 	require.Equal(t, 1, result.Attempts)
 	require.Len(t, store.reservations, 1)
 }
+
+func TestModerationV2StrongFailurePreservesCause(t *testing.T) {
+	s, c, shared, _ := enhancedFixture(t, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusUnauthorized) })
+	c.Policy.Mode = "quality"
+	result := s.evaluateModerationV2(context.Background(), v2Input("unauthorized", "test"), c, shared, "admin_test", "unauthorized")
+	require.Equal(t, "unresolved", result.Status)
+	require.Equal(t, "provider_http_error", result.Reason)
+	require.Equal(t, 1, result.Attempts)
+}

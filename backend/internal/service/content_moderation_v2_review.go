@@ -145,6 +145,9 @@ func (s *ContentModerationService) evaluateModerationV2Enhanced(ctx context.Cont
 			}
 		}
 		ids, reason := moderationV2StageOrder(ctx, cfg, evidence, review)
+		if reason == "" {
+			reason = out.Reason
+		}
 		called := false
 		for _, id := range ids {
 			routeKey := fmt.Sprintf("%t/%s", review, id)
@@ -260,6 +263,7 @@ func (s *ContentModerationService) evaluateModerationV2Enhanced(ctx context.Cont
 			if !review && (v.Flagged || moderationV2Uncertain(v, cfg.Policy.UncertaintyMargin)) {
 				primary = v
 				reason = "review_required"
+				out.Traces[len(out.Traces)-1].Reason = reason
 				break
 			}
 			if moderationV2Uncertain(v, cfg.Policy.UncertaintyMargin) {

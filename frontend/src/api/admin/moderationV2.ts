@@ -44,7 +44,7 @@ export const moderationV2API = {
   save: async (data: AuditConfig) => (await apiClient.put<AuditConfig>(`${root}/config`, data)).data,
   usage: async () => (await apiClient.get<AuditUsage>(`${root}/usage`)).data,
   preview: async (input: string | AuditTestInput) => (await apiClient.post<AuditPreview>(`${root}/preview`, typeof input === 'string' ? { text: input } : input)).data,
-  test: async (input: string | AuditTestInput) => (await apiClient.post<AuditResult>(`${root}/test`, typeof input === 'string' ? { text: input } : input, { timeout: 250000 })).data,
+  test: async (input: string | AuditTestInput) => (await apiClient.post<AuditResult>(`${root}/test`, typeof input === 'string' ? { text: input } : input, { timeout: 270000 })).data,
 }
 export const emptyAuditLimits = (): AuditLimits => ({ daily_calls: 0, daily_tokens: 0, daily_amount: '' })
 export function newAuditProvider(): AuditProvider {
