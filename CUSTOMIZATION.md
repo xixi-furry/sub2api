@@ -160,16 +160,25 @@ docker build -t sub2api:custom .
 ## 历史发布：v0.2.7-fix1
 
 - 版本：v0.2.7-fix1（2026-09-22）。
-- 镜像：`ghcr.io/xixi-furry/sub2api:v0.2.7-fix1`，另提供不带 v 的标签和 latest。
+- 镜像：`ghcr.io/xixi-furry/sub2api:v0.2.7-fix1`，另提供不带 v 的固定标签；`latest` 已随之后的正式发布更新。
 - 多架构摘要：`sha256:104896c19784918895ec9fa29b1f2998226fe41051a5eba9f8c283e103997c8c`。
 - amd64 / arm64 镜像均通过数据库初始化、HTTP 健康检查和前端页面检查，并已验证匿名访问及源码标识。
 - [发布页](https://github.com/xixi-furry/sub2api/releases/tag/v0.2.7-fix1)；[完整构建及验证记录](https://github.com/xixi-furry/sub2api/actions/runs/35684041796)。
 - 自动同步工作流已启用，首次无更新检查通过。服务器需另行切换镜像；更换前备份数据库，保留数据卷和环境配置。
 
 
-## v0.2.7-fix2 部署与启用
+## 当前发布：v0.2.7-fix2
 
-镜像：`ghcr.io/xixi-furry/sub2api:v0.2.7-fix2`，同时提供 `0.2.7-fix2` 和发布成功后更新的 `latest`。这次发行包含原风控中心的多渠道审核、上下文策略、强审、Chat Completions / Responses 和共享预算，不调整业务模型的 OAuth 指纹。
+- 发布时间：2026-09-22 17:38（北京时间）；正式版，非预发布。
+- 发布源码：`f2196f358d337bc3d7ef2366d1100db3f59c1519`；后续文档提交不改变此版本源码。
+- `v0.2.7-fix2`、`0.2.7-fix2` 和 `latest` 已核对为同一多架构摘要：`sha256:2ae5dacfa9b866919d011dee7bd293db326b3e25eb3d86774a331b5ada9f7456`。
+- 完整 CI 成功；linux/amd64、linux/arm64 均通过版本、数据库初始化、健康接口和内嵌前端检查。发布后匿名读取镜像清单及配置成功，校验了摘要、两种架构、版本与源码标识。
+- [正式发布页](https://github.com/xixi-furry/sub2api/releases/tag/v0.2.7-fix2)；[完整构建及验证记录](https://github.com/xixi-furry/sub2api/actions/runs/35710039639)。发布附件含两种架构升级包及 `checksums.txt`。
+- 尚未操作服务器上的容器。真实运营商效果、费用与耗时需部署后结合试跑和审计日志验证。
+
+### 部署与启用
+
+镜像：`ghcr.io/xixi-furry/sub2api:v0.2.7-fix2`，同时提供 `0.2.7-fix2`；`latest` 已指向本版本。这次发行包含原风控中心的多渠道审核、上下文策略、强审、Chat Completions / Responses 和共享预算，不调整业务模型的 OAuth 指纹。
 
 升级容器时保留原 PostgreSQL、Redis、数据卷和环境变量。首次启动自动执行 `240_fork_content_moderation_v2.sql`，新建独立 `fork_moderation_*` 表；不会清空现有数据。更新前保存数据库备份。旧引擎和审核策略继续保留，启用新模式前确认渠道、价格、总预算与未完成时的处置。
 
