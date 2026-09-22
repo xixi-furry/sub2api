@@ -3,6 +3,7 @@ import { apiClient } from '../client'
 export type ModerationMode = 'off' | 'observe' | 'pre_block'
 export type ModerationEngine = 'openai' | 'typesafe'
 export interface ModerationEngineMeta {
+  reason?: string
   engine: ModerationEngine
   model: string
   rules_version: string
@@ -17,6 +18,10 @@ export interface ContentModerationModelFilter {
 }
 
 export interface ContentModerationConfig {
+  api_format?: 'moderations' | 'chat_completions'
+  audit_prompt?: string
+  payload_script?: string
+  confidence_threshold?: number
   engine?: ModerationEngine
   engine_configs?: Record<ModerationEngine, ContentModerationConfig>
   enabled: boolean
@@ -72,6 +77,10 @@ export interface ContentModerationAPIKeyStatus {
 }
 
 export interface TestContentModerationAPIKeysPayload {
+  api_format?: 'moderations' | 'chat_completions'
+  audit_prompt?: string
+  payload_script?: string
+  confidence_threshold?: number
   engine?: ModerationEngine
   thresholds?: Record<string, number>
   api_keys?: string[]
@@ -101,6 +110,10 @@ export interface ContentModerationTestAuditResult {
 }
 
 export interface UpdateContentModerationConfig {
+  api_format?: 'moderations' | 'chat_completions'
+  audit_prompt?: string
+  payload_script?: string
+  confidence_threshold?: number
   engine?: ModerationEngine
   engine_configs?: Partial<Record<ModerationEngine, UpdateModerationEngineConfig>>
   enabled?: boolean
@@ -218,7 +231,7 @@ export interface ContentModerationLog {
 }
 
 export type UpdateModerationEngineConfig = Pick<UpdateContentModerationConfig,
-  'base_url' | 'model' | 'proxy_id' | 'api_keys' | 'api_keys_mode' | 'delete_api_key_hashes' |
+  'api_format' | 'audit_prompt' | 'payload_script' | 'confidence_threshold' | 'base_url' | 'model' | 'proxy_id' | 'api_keys' | 'api_keys_mode' | 'delete_api_key_hashes' |
   'clear_api_key' | 'timeout_ms' | 'retry_count' | 'thresholds'>
 
 export interface ListContentModerationLogsParams {

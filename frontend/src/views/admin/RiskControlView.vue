@@ -677,6 +677,7 @@
                   </div>
 
                   <div v-if="moderationTestResult" class="mt-4 rounded-lg border border-gray-100 bg-white p-3 dark:border-dark-700 dark:bg-dark-800">
+                    <p v-if="moderationTestResult.engine_meta?.reason" class="mb-3 text-sm text-gray-700 dark:text-dark-200">{{ moderationTestResult.engine_meta.reason }}</p>
                     <p v-if="moderationTestResult.engine_meta" class="mb-2 break-words text-xs text-gray-500">
                       {{ engineLabel(moderationTestResult.engine_meta.engine) }} · {{ moderationTestResult.engine_meta.model }} · {{ moderationTestResult.engine_meta.rules_version }}
                       <span v-if="moderationTestResult.engine_meta.skipped_images"> · {{ t('admin.riskControl.skippedImages', { count: moderationTestResult.engine_meta.skipped_images }) }}</span>
@@ -716,6 +717,45 @@
                 </div>
               </div>
             </div>
+          </div>
+
+
+          <div v-else-if="activeSettingsTab === 'customCode'" class="space-y-5">
+            <p v-if="configForm.engine === 'typesafe'" class="rounded-xl bg-gray-50 p-4 text-sm leading-6 text-gray-600 dark:bg-dark-900 dark:text-dark-300">
+              {{ t('admin.riskControl.customCodeTypeSafe') }}
+            </p>
+            <template v-else>
+              <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                <div>
+                  <label for="moderation-api-format" class="input-label">{{ t('admin.riskControl.apiFormat') }}</label>
+                  <select id="moderation-api-format" v-model="configForm.api_format" class="input" data-test="moderation-api-format">
+                    <option value="moderations">Moderations</option>
+                    <option value="chat_completions">Chat Completions</option>
+                  </select>
+                  <p class="input-hint">{{ t('admin.riskControl.apiFormatHint') }}</p>
+                </div>
+                <div v-if="configForm.api_format === 'chat_completions'">
+                  <label for="moderation-confidence" class="input-label">{{ t('admin.riskControl.confidenceThreshold') }}</label>
+                  <input id="moderation-confidence" v-model.number="configForm.confidence_threshold" data-test="moderation-confidence" class="input" type="number" min="0" max="1" step="0.01" />
+                  <p class="input-hint">{{ t('admin.riskControl.confidenceThresholdHint') }}</p>
+                </div>
+              </div>
+              <div>
+                <label for="moderation-audit-prompt" class="input-label">{{ t('admin.riskControl.auditPrompt') }}</label>
+                <textarea id="moderation-audit-prompt" v-model="configForm.audit_prompt" data-test="moderation-audit-prompt" rows="9" class="input resize-y leading-6" spellcheck="false" :placeholder="t('admin.riskControl.auditPromptPlaceholder')" aria-describedby="moderation-prompt-help"></textarea>
+                <p id="moderation-prompt-help" class="input-hint">{{ t('admin.riskControl.auditPromptHint') }}</p>
+              </div>
+              <div>
+                <div class="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                  <label for="moderation-payload-script" class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.riskControl.payloadScript') }}</label>
+                  <button v-if="!configForm.payload_script" type="button" class="rounded-lg px-3 py-2 text-sm text-primary-700 hover:bg-primary-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500 dark:text-primary-300 dark:hover:bg-primary-900/30" @click="configForm.payload_script = moderationPayloadExample">{{ t('admin.riskControl.insertPayloadExample') }}</button>
+                </div>
+                <textarea id="moderation-payload-script" v-model="configForm.payload_script" data-test="moderation-payload-script" rows="12" class="input resize-y font-mono text-xs leading-6" spellcheck="false" autocapitalize="off" autocorrect="off" :placeholder="t('admin.riskControl.payloadScriptPlaceholder')" aria-describedby="moderation-payload-help"></textarea>
+                <p id="moderation-payload-help" class="input-hint leading-5">{{ t('admin.riskControl.payloadScriptHint') }}</p>
+              </div>
+              <p class="rounded-xl border border-primary-100 bg-primary-50/60 px-4 py-3 text-sm leading-6 text-primary-800 dark:border-primary-800 dark:bg-primary-900/20 dark:text-primary-200">{{ t('admin.riskControl.customCodeTestHint') }}</p>
+              <button type="button" class="btn btn-secondary" @click="activeSettingsTab = 'basic'">{{ t('admin.riskControl.goToAuditTest') }}</button>
+            </template>
           </div>
 
           <div v-else-if="activeSettingsTab === 'scope'" class="space-y-5">
@@ -925,6 +965,11 @@
             </div>
           </div>
 
+          <div v-else-if="activeSettingsTab === 'riskThresholds' && configForm.engine === 'openai' && configForm.api_format === 'chat_completions'" class="space-y-4">
+            <p class="text-sm leading-6 text-gray-600 dark:text-dark-300">{{ t('admin.riskControl.chatThresholdsHint') }}</p>
+            <button type="button" class="btn btn-secondary" @click="activeSettingsTab = 'customCode'">{{ t('admin.riskControl.customCode') }}</button>
+          </div>
+
           <div v-else-if="activeSettingsTab === 'riskThresholds'" class="space-y-5">
             <p class="text-sm font-medium">{{ engineLabel(configForm.engine) }}</p>
             <p v-if="configForm.engine === 'typesafe'" class="text-sm text-amber-700 dark:text-amber-300">{{ t('admin.riskControl.typeSafeThresholds') }}</p>
@@ -1085,6 +1130,7 @@
         @close="closeInputDetail"
       >
         <div v-if="inputDetailRow" class="space-y-5">
+          <p v-if="inputDetailRow.engine_meta?.reason" class="text-sm text-gray-700 dark:text-dark-200">{{ inputDetailRow.engine_meta.reason }}</p>
           <div class="text-sm break-words" data-test="audit-engine-meta">
             <span class="font-medium">{{ t('admin.riskControl.auditSource') }}: </span>
             <template v-if="inputDetailRow.engine_meta">
@@ -1147,6 +1193,7 @@
 </template>
 
 <script setup lang="ts">
+import { moderationPayloadExample } from '@/utils/moderationPayload'
 import { computed, onMounted, onUnmounted, reactive, ref, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -1178,7 +1225,7 @@ import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import { formatDateTime as formatDateTimeValue } from '@/utils/format'
 
-type SettingsTab = 'basic' | 'scope' | 'runtime' | 'response' | 'riskThresholds' | 'retention' | 'keywords'
+type SettingsTab = 'customCode' | 'basic' | 'scope' | 'runtime' | 'response' | 'riskThresholds' | 'retention' | 'keywords'
 type WorkerSlotState = 'active' | 'idle' | 'disabled'
 type APIKeysWriteMode = 'append' | 'replace'
 type OverviewIcon = 'shield' | 'key' | 'users' | 'document'
@@ -1252,11 +1299,15 @@ const moderationTestImages = ref<string[]>([])
 const moderationTestResult = ref<ContentModerationTestAuditResult | null>(null)
 const inputDetailRow = ref<ContentModerationLog | null>(null)
 const savedEngine = ref<ModerationEngine>('openai')
-const engineOptions: SelectOption[] = [{ value: 'openai', label: 'OpenAI' }, { value: 'typesafe', label: 'TypeSafe AI' }]
+const engineOptions: SelectOption[] = [{ value: 'openai', label: 'OpenAI Compatible' }, { value: 'typesafe', label: 'TypeSafe AI' }]
 const engineLabel = (engine: ModerationEngine) => engine === 'typesafe' ? 'TypeSafe AI' : 'OpenAI'
 let statusTimer: number | null = null
 
 const configForm = reactive({
+  api_format: 'moderations' as 'moderations' | 'chat_completions',
+  audit_prompt: '',
+  payload_script: '',
+  confidence_threshold: 0.85,
   engine: 'openai' as ModerationEngine,
   enabled: false,
   mode: 'pre_block' as ModerationMode,
@@ -1296,7 +1347,7 @@ const configForm = reactive({
   model_filter_models: [] as string[],
 })
 
-const engineFields = ['base_url', 'model', 'proxy_id', 'api_keys_text', 'api_key_configured', 'api_key_masked', 'api_key_count', 'api_key_masks', 'api_key_statuses', 'api_keys_mode', 'clear_api_key', 'timeout_ms', 'retry_count', 'thresholds'] as const
+const engineFields = ['api_format', 'audit_prompt', 'payload_script', 'confidence_threshold', 'base_url', 'model', 'proxy_id', 'api_keys_text', 'api_key_configured', 'api_key_masked', 'api_key_count', 'api_key_masks', 'api_key_statuses', 'api_keys_mode', 'clear_api_key', 'timeout_ms', 'retry_count', 'thresholds'] as const
 type EngineDraft = Pick<typeof configForm, typeof engineFields[number]> & { pendingDeletes: string[] }
 const engineDrafts = ref<Partial<Record<ModerationEngine, EngineDraft>>>({})
 
@@ -1328,6 +1379,10 @@ function engineDraftFromConfig(config: ContentModerationConfig | undefined, engi
     api_keys_mode: 'append', clear_api_key: false, pendingDeletes: [],
     timeout_ms: config?.timeout_ms ?? 3000, retry_count: config?.retry_count ?? 2,
     thresholds: riskThresholdsFromConfig(config?.thresholds),
+    api_format: config?.api_format ?? 'moderations',
+    audit_prompt: config?.audit_prompt ?? '',
+    payload_script: config?.payload_script ?? '',
+    confidence_threshold: config?.confidence_threshold ?? 0.85,
   }
 }
 
@@ -1335,6 +1390,8 @@ function engineDraftPayload(draft: EngineDraft): UpdateModerationEngineConfig {
   const keys = parseApiKeys(draft.api_keys_text)
   if (!draft.clear_api_key && draft.api_keys_mode === 'replace' && keys.length === 0) throw new Error('empty replacement keys')
   return {
+    api_format: draft.api_format, audit_prompt: draft.audit_prompt,
+    payload_script: draft.payload_script, confidence_threshold: draft.confidence_threshold,
     base_url: draft.base_url, model: draft.model, proxy_id: draft.proxy_id ?? 0,
     timeout_ms: draft.timeout_ms, retry_count: draft.retry_count,
     thresholds: Object.fromEntries(riskThresholdCategories.map(k => [k, clampPercent(draft.thresholds[k]) / 100])),
@@ -1361,6 +1418,7 @@ const filters = reactive({
 
 const settingsTabs = computed<Array<{ id: SettingsTab; label: string }>>(() => [
   { id: 'basic', label: t('admin.riskControl.tabs.basic') },
+  { id: 'customCode', label: t('admin.riskControl.customCode') },
   { id: 'scope', label: t('admin.riskControl.tabs.scope') },
   { id: 'runtime', label: t('admin.riskControl.tabs.runtime') },
   { id: 'response', label: t('admin.riskControl.tabs.response') },
@@ -1885,6 +1943,10 @@ async function saveConfig() {
     }
     const payload: UpdateContentModerationConfig = {
       engine: configForm.engine,
+      api_format: configForm.api_format,
+      audit_prompt: configForm.audit_prompt,
+      payload_script: configForm.payload_script,
+      confidence_threshold: configForm.confidence_threshold,
       enabled: configForm.enabled,
       mode: configForm.mode,
       base_url: configForm.base_url,
@@ -2088,6 +2150,10 @@ async function testApiKeys(useInputKeys: boolean) {
   try {
     const result = await adminAPI.riskControl.testAPIKeys({
       engine: configForm.engine,
+      api_format: configForm.api_format,
+      audit_prompt: configForm.audit_prompt,
+      payload_script: configForm.payload_script,
+      confidence_threshold: configForm.confidence_threshold,
       thresholds: buildRiskThresholdPayload(),
       api_keys: keys,
       base_url: configForm.base_url,

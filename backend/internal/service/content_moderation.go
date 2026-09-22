@@ -139,6 +139,7 @@ func ContentModerationCategories() []string {
 }
 
 type ContentModerationConfig struct {
+	ContentModerationCustomConfig
 	Engine   string                         `json:"engine,omitempty"`
 	TypeSafe *ContentModerationEngineConfig `json:"typesafe,omitempty"`
 	Enabled  bool                           `json:"enabled"`
@@ -177,6 +178,7 @@ type ContentModerationConfig struct {
 }
 
 type ContentModerationConfigView struct {
+	ContentModerationCustomConfig
 	Engine                         string                                  `json:"engine"`
 	EngineConfigs                  map[string]*ContentModerationConfigView `json:"engine_configs,omitempty"`
 	Enabled                        bool                                    `json:"enabled"`
@@ -244,6 +246,7 @@ type ContentModerationAPIKeyLoad struct {
 }
 
 type TestContentModerationAPIKeysInput struct {
+	ContentModerationCustomInput
 	Engine     string              `json:"engine"`
 	Thresholds *map[string]float64 `json:"thresholds"`
 	APIKeys    []string            `json:"api_keys"`
@@ -273,6 +276,7 @@ type ContentModerationTestAuditResult struct {
 }
 
 type UpdateContentModerationConfigInput struct {
+	ContentModerationCustomInput
 	Engine        *string                                       `json:"engine"`
 	EngineConfigs map[string]UpdateContentModerationEngineInput `json:"engine_configs"`
 	Enabled       *bool                                         `json:"enabled"`
@@ -698,7 +702,8 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 	}
 	// Legacy flat updates target the selected engine; explicit profiles preserve both drafts.
 	if err := s.updateEngineProfile(ctx, cfg, cfg.Engine, UpdateContentModerationEngineInput{
-		BaseURL: input.BaseURL, Model: input.Model, ProxyID: input.ProxyID, APIKey: input.APIKey,
+		ContentModerationCustomInput: input.ContentModerationCustomInput,
+		BaseURL:                      input.BaseURL, Model: input.Model, ProxyID: input.ProxyID, APIKey: input.APIKey,
 		APIKeys: input.APIKeys, APIKeysMode: input.APIKeysMode, DeleteAPIKeyHashes: input.DeleteAPIKeyHashes,
 		ClearAPIKey: input.ClearAPIKey, TimeoutMS: input.TimeoutMS, RetryCount: input.RetryCount, Thresholds: input.Thresholds,
 	}); err != nil {
@@ -739,6 +744,7 @@ func (s *ContentModerationService) TestAPIKeys(ctx context.Context, input TestCo
 		return nil, infraerrors.BadRequest("INVALID_CONTENT_MODERATION_ENGINE", "内容审计引擎无效")
 	}
 	cfg = cfg.effectiveEngine(engine)
+	cfg.applyCustomInput(input.ContentModerationCustomInput)
 	if input.Thresholds != nil {
 		cfg.Thresholds = mergeContentModerationThresholds(moderationEngineDefaults(engine).Thresholds, *input.Thresholds)
 	}
@@ -766,6 +772,9 @@ func (s *ContentModerationService) TestAPIKeys(ctx context.Context, input TestCo
 		}
 	}
 	cfg.normalize()
+	if err := validateCustomModerationConfig(ctx, cfg); err != nil {
+		return nil, err
+	}
 	testInput, imageCount, err := buildModerationTestInput(input.Prompt, input.Images)
 	if err != nil {
 		return nil, err
@@ -1078,7 +1087,7 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 		return allow
 	}
 
-	flagged, highestCategory, highestScore := evaluateModerationScores(result.CategoryScores, cfg.Thresholds)
+	flagged, highestCategory, highestScore := evaluateModerationResult(result, cfg.Thresholds)
 	action := ContentModerationActionAllow
 	blocked := false
 	if allowBlock && flagged && cfg.Mode == ContentModerationModePreBlock {
@@ -1107,6 +1116,9 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 	if flagged || cfg.RecordNonHits {
 		log := s.buildLog(input, cfg, action, flagged, highestCategory, highestScore, result.CategoryScores, content.ExcerptText(), &latency, queueDelay, "")
 		log.EngineMeta = result.EngineMeta
+		if result.Custom {
+			log.ThresholdSnapshot = map[string]float64{customModerationCategory: result.CustomThreshold}
+		}
 		if queueDelay == nil && cfg.Mode == ContentModerationModePreBlock {
 			s.enqueueRecord(input, cfg, log, hashText, flagged, flagged)
 		} else {
@@ -1662,6 +1674,9 @@ func (s *ContentModerationService) validateConfig(ctx context.Context, cfg *Cont
 	if !validModerationEngine(cfg.Engine) {
 		return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_ENGINE", "内容审计引擎无效")
 	}
+	if err := validateCustomModerationConfig(ctx, cfg); err != nil {
+		return err
+	}
 	switch cfg.Mode {
 	case ContentModerationModeOff, ContentModerationModeObserve, ContentModerationModePreBlock:
 	default:
@@ -1746,16 +1761,11 @@ func (s *ContentModerationService) callModerationOnceWithInput(ctx context.Conte
 	if cfg.Engine == ContentModerationEngineTypeSafe {
 		return s.callTypeSafeModeration(ctx, cfg, apiKey, input, httpStatus)
 	}
-	base := strings.TrimRight(cfg.BaseURL, "/")
-	endpoint, err := url.JoinPath(base, "/v1/moderations")
+	endpoint, err := moderationEndpoint(cfg)
 	if err != nil {
 		return nil, err
 	}
-	payload := moderationAPIRequest{
-		Model: cfg.Model,
-		Input: input,
-	}
-	raw, err := json.Marshal(payload)
+	raw, err := buildCustomModerationPayload(ctx, cfg, input)
 	if err != nil {
 		return nil, err
 	}
@@ -1786,6 +1796,9 @@ func (s *ContentModerationService) callModerationOnceWithInput(ctx context.Conte
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return nil, fmt.Errorf("moderation api status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	if cfg.APIFormat == ContentModerationAPIFormatChat {
+		return parseChatModerationResponse(resp.Body, cfg)
 	}
 	var out moderationAPIResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
@@ -2091,30 +2104,31 @@ func (s *ContentModerationService) siteName(ctx context.Context) string {
 
 func defaultContentModerationConfig() *ContentModerationConfig {
 	return &ContentModerationConfig{
-		Enabled:              false,
-		Mode:                 ContentModerationModePreBlock,
-		BaseURL:              defaultContentModerationBaseURL,
-		Model:                defaultContentModerationModel,
-		TimeoutMS:            defaultContentModerationTimeoutMS,
-		SampleRate:           100,
-		AllGroups:            true,
-		GroupIDs:             []int64{},
-		RecordNonHits:        false,
-		Thresholds:           ContentModerationDefaultThresholds(),
-		WorkerCount:          defaultContentModerationWorkerCount,
-		QueueSize:            defaultContentModerationQueueSize,
-		BlockStatus:          defaultContentModerationBlockHTTPStatus,
-		BlockMessage:         defaultContentModerationBlockMessage,
-		EmailOnHit:           true,
-		AutoBanEnabled:       true,
-		BanThreshold:         defaultContentModerationBanThreshold,
-		ViolationWindowHours: defaultContentModerationViolationWindowHours,
-		RetryCount:           defaultContentModerationRetryCount,
-		HitRetentionDays:     defaultContentModerationHitRetentionDays,
-		NonHitRetentionDays:  defaultContentModerationNonHitRetentionDays,
-		PreHashCheckEnabled:  false,
-		BlockedKeywords:      []string{},
-		KeywordBlockingMode:  ContentModerationKeywordModeKeywordAndAPI,
+		ContentModerationCustomConfig: ContentModerationCustomConfig{APIFormat: ContentModerationAPIFormatModerations, ConfidenceThreshold: 0.85},
+		Enabled:                       false,
+		Mode:                          ContentModerationModePreBlock,
+		BaseURL:                       defaultContentModerationBaseURL,
+		Model:                         defaultContentModerationModel,
+		TimeoutMS:                     defaultContentModerationTimeoutMS,
+		SampleRate:                    100,
+		AllGroups:                     true,
+		GroupIDs:                      []int64{},
+		RecordNonHits:                 false,
+		Thresholds:                    ContentModerationDefaultThresholds(),
+		WorkerCount:                   defaultContentModerationWorkerCount,
+		QueueSize:                     defaultContentModerationQueueSize,
+		BlockStatus:                   defaultContentModerationBlockHTTPStatus,
+		BlockMessage:                  defaultContentModerationBlockMessage,
+		EmailOnHit:                    true,
+		AutoBanEnabled:                true,
+		BanThreshold:                  defaultContentModerationBanThreshold,
+		ViolationWindowHours:          defaultContentModerationViolationWindowHours,
+		RetryCount:                    defaultContentModerationRetryCount,
+		HitRetentionDays:              defaultContentModerationHitRetentionDays,
+		NonHitRetentionDays:           defaultContentModerationNonHitRetentionDays,
+		PreHashCheckEnabled:           false,
+		BlockedKeywords:               []string{},
+		KeywordBlockingMode:           ContentModerationKeywordModeKeywordAndAPI,
 		ModelFilter: ContentModerationModelFilter{
 			Type:   ContentModerationModelFilterAll,
 			Models: []string{},
@@ -2144,6 +2158,9 @@ func cloneContentModerationConfig(cfg *ContentModerationConfig) *ContentModerati
 }
 
 func (cfg *ContentModerationConfig) normalize() {
+	if cfg.APIFormat == "" {
+		cfg.APIFormat = ContentModerationAPIFormatModerations
+	}
 	cfg.Engine = moderationEngine(cfg.Engine)
 	if cfg.APIKey != "" {
 		cfg.APIKeys = normalizeModerationAPIKeys(append(cfg.APIKeys, cfg.APIKey))
@@ -2424,6 +2441,7 @@ func (s *ContentModerationService) configView(cfg *ContentModerationConfig) *Con
 		apiKeyMasked = masks[0]
 	}
 	return &ContentModerationConfigView{
+		ContentModerationCustomConfig:  cfg.ContentModerationCustomConfig,
 		Engine:                         cfg.Engine,
 		Enabled:                        cfg.Enabled,
 		Mode:                           cfg.Mode,
@@ -2663,7 +2681,10 @@ func buildContentModerationTestAuditResult(result *moderationAPIResult, threshol
 		scores[category] = score
 	}
 	thresholdSnapshot := mergeContentModerationThresholds(ContentModerationDefaultThresholds(), thresholds)
-	flagged, highestCategory, highestScore := evaluateModerationScores(scores, thresholdSnapshot)
+	if result.Custom {
+		thresholdSnapshot = map[string]float64{customModerationCategory: result.CustomThreshold}
+	}
+	flagged, highestCategory, highestScore := evaluateModerationResult(result, thresholdSnapshot)
 	compositeScore := highestScore
 	return &ContentModerationTestAuditResult{
 		EngineMeta:      result.EngineMeta,
@@ -2697,9 +2718,11 @@ type moderationAPIResponse struct {
 }
 
 type moderationAPIResult struct {
-	EngineMeta     *ContentModerationEngineMeta `json:"-"`
-	Flagged        bool                         `json:"flagged"`
-	CategoryScores map[string]float64           `json:"category_scores"`
+	Custom          bool                         `json:"-"`
+	CustomThreshold float64                      `json:"-"`
+	EngineMeta      *ContentModerationEngineMeta `json:"-"`
+	Flagged         bool                         `json:"flagged"`
+	CategoryScores  map[string]float64           `json:"category_scores"`
 }
 
 func evaluateModerationScores(scores map[string]float64, thresholds map[string]float64) (bool, string, float64) {

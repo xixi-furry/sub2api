@@ -51,3 +51,26 @@ func TestContentModerationEngineHandlerRoundTrip(t *testing.T) {
 	require.Contains(t, settings.value, "legacy-secret")
 	require.Contains(t, settings.value, "new-secret")
 }
+
+func TestContentModerationCustomHandlerRoundTrip(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	settings := &moderationEngineSettings{value: "{}"}
+	svc := service.NewContentModerationService(settings, nil, nil, nil, nil, nil, nil, nil)
+	router := gin.New()
+	h := NewContentModerationHandler(svc)
+	router.PUT("/config", h.UpdateConfig)
+	router.GET("/config", h.GetConfig)
+	body := `{"api_format":"chat_completions","audit_prompt":"user supplied policy","payload_script":"const requestBody = {model:config.model,messages:[{role:'system',content:config.auditPrompt},{role:'user',content:text}]};","confidence_threshold":0.8}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/config", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+	require.Equal(t, 200, w.Code, w.Body.String())
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/config", nil))
+	require.Equal(t, 200, w.Code)
+	require.Contains(t, w.Body.String(), `"audit_prompt":"user supplied policy"`)
+	require.Contains(t, w.Body.String(), `"api_format":"chat_completions"`)
+	require.Contains(t, w.Body.String(), `"confidence_threshold":0.8`)
+	require.Contains(t, w.Body.String(), "const requestBody")
+}

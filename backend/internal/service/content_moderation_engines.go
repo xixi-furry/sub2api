@@ -13,6 +13,7 @@ const (
 )
 
 type ContentModerationEngineConfig struct {
+	ContentModerationCustomConfig
 	BaseURL    string             `json:"base_url"`
 	Model      string             `json:"model"`
 	ProxyID    *int64             `json:"proxy_id,omitempty"`
@@ -23,6 +24,7 @@ type ContentModerationEngineConfig struct {
 }
 
 type UpdateContentModerationEngineInput struct {
+	ContentModerationCustomInput
 	BaseURL            *string             `json:"base_url"`
 	Model              *string             `json:"model"`
 	ProxyID            *int64              `json:"proxy_id"`
@@ -37,6 +39,7 @@ type UpdateContentModerationEngineInput struct {
 }
 
 type ContentModerationEngineMeta struct {
+	Reason        string `json:"reason,omitempty"`
 	Engine        string `json:"engine"`
 	Model         string `json:"model"`
 	RulesVersion  string `json:"rules_version"`
@@ -55,7 +58,7 @@ func validModerationEngine(engine string) bool {
 }
 
 func moderationEngineDefaults(engine string) *ContentModerationEngineConfig {
-	p := &ContentModerationEngineConfig{BaseURL: defaultContentModerationBaseURL, Model: defaultContentModerationModel, TimeoutMS: 3000, RetryCount: 2, Thresholds: ContentModerationDefaultThresholds()}
+	p := &ContentModerationEngineConfig{ContentModerationCustomConfig: ContentModerationCustomConfig{APIFormat: ContentModerationAPIFormatModerations, ConfidenceThreshold: 0.85}, BaseURL: defaultContentModerationBaseURL, Model: defaultContentModerationModel, TimeoutMS: 3000, RetryCount: 2, Thresholds: ContentModerationDefaultThresholds()}
 	if engine == ContentModerationEngineTypeSafe {
 		p.BaseURL, p.Model = "https://api.typesafe.ai", "jev-latest"
 	}
@@ -70,7 +73,7 @@ func (cfg *ContentModerationConfig) engineProfile(engine string) *ContentModerat
 		}
 		p = *cfg.TypeSafe
 	} else {
-		p = ContentModerationEngineConfig{BaseURL: cfg.BaseURL, Model: cfg.Model, ProxyID: cfg.ProxyID, APIKeys: cfg.apiKeys(), TimeoutMS: cfg.TimeoutMS, RetryCount: cfg.RetryCount, Thresholds: cfg.Thresholds}
+		p = ContentModerationEngineConfig{ContentModerationCustomConfig: cfg.ContentModerationCustomConfig, BaseURL: cfg.BaseURL, Model: cfg.Model, ProxyID: cfg.ProxyID, APIKeys: cfg.apiKeys(), TimeoutMS: cfg.TimeoutMS, RetryCount: cfg.RetryCount, Thresholds: cfg.Thresholds}
 	}
 	p.ProxyID = cloneInt64Ptr(p.ProxyID)
 	p.APIKeys = append([]string(nil), p.APIKeys...)
@@ -79,6 +82,7 @@ func (cfg *ContentModerationConfig) engineProfile(engine string) *ContentModerat
 }
 
 func (cfg *ContentModerationConfig) applyEngineProfile(p *ContentModerationEngineConfig) {
+	cfg.ContentModerationCustomConfig = p.ContentModerationCustomConfig
 	cfg.BaseURL, cfg.Model, cfg.ProxyID = p.BaseURL, p.Model, cloneInt64Ptr(p.ProxyID)
 	cfg.APIKey, cfg.APIKeys = "", append([]string(nil), p.APIKeys...)
 	cfg.TimeoutMS, cfg.RetryCount = p.TimeoutMS, p.RetryCount
@@ -97,6 +101,7 @@ func (s *ContentModerationService) updateEngineProfile(ctx context.Context, cfg 
 		return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_ENGINE", "内容审计引擎无效")
 	}
 	p := cfg.engineProfile(engine)
+	p.applyCustomInput(input.ContentModerationCustomInput)
 	defaults := moderationEngineDefaults(engine)
 	if input.BaseURL != nil {
 		p.BaseURL = strings.TrimSpace(*input.BaseURL)
@@ -149,7 +154,7 @@ func (s *ContentModerationService) updateEngineProfile(ctx context.Context, cfg 
 	if err := s.validateConfig(ctx, check); err != nil {
 		return err
 	}
-	p = &ContentModerationEngineConfig{BaseURL: check.BaseURL, Model: check.Model, ProxyID: check.ProxyID, APIKeys: check.APIKeys, TimeoutMS: check.TimeoutMS, RetryCount: check.RetryCount, Thresholds: check.Thresholds}
+	p = &ContentModerationEngineConfig{ContentModerationCustomConfig: check.ContentModerationCustomConfig, BaseURL: check.BaseURL, Model: check.Model, ProxyID: check.ProxyID, APIKeys: check.APIKeys, TimeoutMS: check.TimeoutMS, RetryCount: check.RetryCount, Thresholds: check.Thresholds}
 	if engine == ContentModerationEngineTypeSafe {
 		cfg.TypeSafe = p
 	} else {

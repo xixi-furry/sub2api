@@ -220,6 +220,59 @@ describe('admin RiskControlView', () => {
     }))
   })
 
+
+  it('round-trips custom code, preserves it across engine changes and saves both drafts', async () => {
+    getConfig.mockResolvedValue({ ...baseConfig(), api_format: 'chat_completions', audit_prompt: 'saved policy', payload_script: 'const requestBody = {}', confidence_threshold: 0.9 })
+    const wrapper = mount(RiskControlView, { global: { stubs: { AppLayout: AppLayoutStub, BaseDialog: BaseDialogStub, Icon: true, Select: true, Toggle: true, Pagination: true, ModelWhitelistSelector: ModelWhitelistSelectorStub, ProxySelector: true } } })
+    await flushPromises()
+    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+    await findButtonByText(wrapper, 'admin.riskControl.customCode').trigger('click')
+    expect((wrapper.get('[data-test="moderation-audit-prompt"]').element as HTMLTextAreaElement).value).toBe('saved policy')
+    await wrapper.get('[data-test="moderation-audit-prompt"]').setValue('my custom policy')
+    await wrapper.get('[data-test="moderation-payload-script"]').setValue('const requestBody = {model: config.model, messages: []};')
+    await wrapper.get('[data-test="moderation-confidence"]').setValue('0')
+    await findButtonByText(wrapper, 'admin.riskControl.tabs.basic').trigger('click')
+    wrapper.findComponent('[data-test="audit-engine-select"]').vm.$emit('update:modelValue', 'typesafe')
+    await flushPromises()
+    wrapper.findComponent('[data-test="audit-engine-select"]').vm.$emit('update:modelValue', 'openai')
+    await flushPromises()
+    await findButtonByText(wrapper, 'admin.riskControl.customCode').trigger('click')
+    expect((wrapper.get('[data-test="moderation-audit-prompt"]').element as HTMLTextAreaElement).value).toBe('my custom policy')
+    await wrapper.get('[data-test="moderation-payload-script"]').setValue('')
+    await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
+    await flushPromises()
+    const custom = { api_format: 'chat_completions', audit_prompt: 'my custom policy', payload_script: '', confidence_threshold: 0 }
+    expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({
+      ...custom,
+      engine_configs: expect.objectContaining({ openai: expect.objectContaining(custom), typesafe: expect.objectContaining({ audit_prompt: '', payload_script: '' }) }),
+    }))
+    expect(showError).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('tests the unsaved custom prompt and payload without saving them', async () => {
+    testAPIKeys.mockResolvedValue({ items: [{ status: 'ok', configured: false }], image_count: 0 })
+    const wrapper = mount(RiskControlView, { global: { stubs: { AppLayout: AppLayoutStub, BaseDialog: BaseDialogStub, Icon: true, Select: true, Toggle: true, Pagination: true, ModelWhitelistSelector: ModelWhitelistSelectorStub, ProxySelector: true } } })
+    await flushPromises()
+    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+    await findButtonByText(wrapper, 'admin.riskControl.customCode').trigger('click')
+    await wrapper.get('[data-test="moderation-api-format"]').setValue('chat_completions')
+    await wrapper.get('[data-test="moderation-audit-prompt"]').setValue('draft policy')
+    await findButtonByText(wrapper, 'admin.riskControl.insertPayloadExample').trigger('click')
+    const script = (wrapper.get('[data-test="moderation-payload-script"]').element as HTMLTextAreaElement).value
+    expect(script).toContain('const requestBody')
+    await wrapper.get('[data-test="moderation-confidence"]').setValue('0.7')
+    await findButtonByText(wrapper, 'admin.riskControl.goToAuditTest').trigger('click')
+    const keyInput = wrapper.get('textarea[autocomplete="new-password"]')
+    expect(keyInput).toBeDefined()
+    await keyInput!.setValue('test-only-key')
+    await findButtonByText(wrapper, 'admin.riskControl.testInputApiKeys').trigger('click')
+    await flushPromises()
+    expect(testAPIKeys).toHaveBeenCalledWith(expect.objectContaining({ api_format: 'chat_completions', audit_prompt: 'draft policy', payload_script: script, confidence_threshold: 0.7 }))
+    expect(updateConfig).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it.each(['openai', 'typesafe'] as const)('shows the selected draft engine keys while %s remains active', async (activeEngine) => {
     const openaiKey: ContentModerationAPIKeyStatus = {
       index: 1, key_hash: 'openai-hash', masked: '********oa01', status: 'frozen',
