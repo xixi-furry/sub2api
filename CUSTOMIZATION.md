@@ -102,11 +102,11 @@ docker build -t sub2api:custom .
 4. 完整 CI 通过后构建前端、两种架构的二进制与镜像，启动临时 PostgreSQL / Redis 验证初始化、HTTP 健康检查和前端页面。
 5. 两种架构都通过后才发布版本镜像、GitHub Release、Linux 升级包及校验文件，最后更新 latest。
 
-版本号通过构建参数注入；保留官方 VERSION 文件，减少以后合并冲突。二开镜像的后台更新和回滚源设为本仓库，并支持 fix 编号数值比较（fix10 大于 fix9）。普通源码构建仍沿用默认更新源；本仓库正式镜像由 Fork Release 工作流生成。
+版本号通过构建参数注入；保留官方 VERSION 文件，减少以后合并冲突。二开镜像的后台更新和回滚源设为本仓库，并支持 fix 编号数值比较（fix10 大于 fix9）；不会复用官方镜像遗留的升级缓存。普通源码构建仍沿用默认更新源；本仓库正式镜像由 Fork Release 工作流生成。
 
 ### 自动同步官方
 
-**Sync Official Releases** 按北京时间每天约 05:23 检查官方最新正式 Release，也可在 Actions 手动运行。GitHub 的计划任务可能延迟执行。
+**Sync Official Releases** 按北京时间每天约 05:23 检查官方最新正式 Release，也可在 Actions 手动运行。GitHub 的计划任务可能延迟执行；公开仓库连续 60 天无活动时，GitHub 可能停用定时任务，届时需在 Actions 重新启用。
 
 - 跟随正式版，不自动跟随每日 main 提交或预发布版。
 - 创建候选分支，以普通 Git merge 合并，保留二开提交历史；不做强制同步或整树替换。

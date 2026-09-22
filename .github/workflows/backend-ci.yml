@@ -46,6 +46,9 @@ jobs:
       - name: Unit tests
         working-directory: backend
         run: make test-unit
+      - name: Fork update source isolation
+        working-directory: backend
+        run: go test -tags=unit -ldflags="-X github.com/Wei-Shaw/sub2api/internal/service.githubRepo=xixi-furry/sub2api" ./internal/service -run "^TestForkUpdateCacheIsolation$" -count=1
       - name: Integration tests
         working-directory: backend
         run: make test-integration
@@ -108,6 +111,7 @@ jobs:
       - run: python -m pip install -r .github/release-tools/requirements-release.txt
       - run: python -m unittest discover -s .github/release-tools -p 'test_release_matrix.py'
       - run: bash -n .github/release-tools/release-images.sh
+      - run: bash -n .github/fork-tools/smoke-image.sh
 
       - name: Fork version planning tests
         run: python -m unittest discover -s .github/fork-tools -p 'test_*.py'
