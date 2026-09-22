@@ -267,7 +267,11 @@ func (s *ContentModerationService) evaluateModerationV2(ctx context.Context, in 
 			return out
 		}
 	}
-	ids := append([]string{cfg.PrimaryID}, cfg.FallbackIDs...)
+	ids, routeReason := moderationChannelOrder(ctx, cfg, content.Text)
+	if len(ids) == 0 {
+		out.Reason = routeReason
+		return out
+	}
 	for _, id := range ids {
 		if out.Attempts >= cfg.MaxAttempts {
 			break
@@ -348,7 +352,7 @@ func (s *ContentModerationService) evaluateModerationV2(ctx context.Context, in 
 			return out
 		}
 		out.Reason = call.reason
-		if !call.retryable || ctx.Err() != nil {
+		if (!call.retryable && cfg.Routing != "lowest_cost") || ctx.Err() != nil {
 			return out
 		}
 	}
@@ -470,12 +474,16 @@ func (s *ContentModerationService) PreviewModerationV2(ctx context.Context, text
 	if e != nil {
 		return nil, e
 	}
-	p := cfg.provider(cfg.PrimaryID)
+	ids, reason := moderationChannelOrder(ctx, cfg, text)
+	if len(ids) == 0 {
+		return &ModerationV2Preview{Reason: reason}, nil
+	}
+	p := cfg.provider(ids[0])
 	if p == nil {
 		return nil, moderationV2Error("configure a primary provider first")
 	}
 	_, estimate, e := buildModerationV2Payload(ctx, *p, text)
-	reason := ""
+	reason = ""
 	if e != nil {
 		reason = e.Error()
 	}

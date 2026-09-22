@@ -234,7 +234,7 @@ export default {
 
     riskControl: {
       v2Unreviewed: 'Review incomplete',
-      v2Active: 'Multiple-provider auditing is active. Manage keys, costs and tests in Audit providers & budgets.',
+      v2Active: 'Model audit channels are active. Manage channels, costs and tests in Moderation Settings.',
       v2Title: 'Audit providers & budgets',
       chatModelPlaceholder: "Enter the model ID supplied by your provider",
       promptOnlyHint: "For a compatible chat model, enter your system prompt and leave the payload empty. The server builds the request and wraps the content to audit.",

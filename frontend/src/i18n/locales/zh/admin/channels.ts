@@ -234,7 +234,7 @@ export default {
 
     riskControl: {
       v2Unreviewed: '未完成审核',
-      v2Active: '当前使用多服务审核；Key、费用与试跑请进入“多服务审核与预算”。',
+      v2Active: '当前使用通用模型审核渠道；渠道、费用与试跑均在“内容审计设置”内管理。',
       v2Title: '多服务审核与预算',
       chatModelPlaceholder: "填写服务商提供的模型 ID",
       promptOnlyHint: "通用聊天模型只需填写系统提示词，payload 留空即可。系统会自动组装请求并包裹待审核内容。",

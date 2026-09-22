@@ -1,3 +1,4 @@
+import type { AuditConfig } from './moderationV2'
 import { apiClient } from '../client'
 
 export type ModerationMode = 'off' | 'observe' | 'pre_block'
@@ -19,6 +20,7 @@ export interface ContentModerationModelFilter {
 }
 
 export interface ContentModerationConfig {
+  channels?: AuditConfig
   api_format?: 'moderations' | 'chat_completions'
   audit_prompt?: string
   payload_script?: string
@@ -111,6 +113,7 @@ export interface ContentModerationTestAuditResult {
 }
 
 export interface UpdateContentModerationConfig {
+  channels?: AuditConfig
   api_format?: 'moderations' | 'chat_completions'
   audit_prompt?: string
   payload_script?: string

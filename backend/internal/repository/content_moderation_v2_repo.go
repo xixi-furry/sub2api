@@ -14,6 +14,9 @@ import (
 var _ service.ModerationV2Repository = (*contentModerationRepository)(nil)
 
 func (r *contentModerationRepository) SaveModerationV2Config(ctx context.Context, expected int64, raw string) error {
+	return r.SaveContentModerationChannels(ctx, expected, raw, "")
+}
+func (r *contentModerationRepository) SaveContentModerationChannels(ctx context.Context, expected int64, raw, shared string) error {
 	tx, e := r.db.BeginTx(ctx, nil)
 	if e != nil {
 		return e
@@ -35,6 +38,11 @@ func (r *contentModerationRepository) SaveModerationV2Config(ctx context.Context
 	}
 	if _, e = tx.ExecContext(ctx, `UPDATE settings SET value=$2,updated_at=now() WHERE key=$1`, service.SettingKeyContentModerationV2, raw); e != nil {
 		return e
+	}
+	if shared != "" {
+		if _, e = tx.ExecContext(ctx, `INSERT INTO settings(key,value) VALUES($1,$2) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=now()`, service.SettingKeyContentModerationConfig, shared); e != nil {
+			return e
+		}
 	}
 	return tx.Commit()
 }

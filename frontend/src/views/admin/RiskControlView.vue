@@ -12,7 +12,6 @@
             <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.description') }}</p>
           </div>
           <div class="flex flex-wrap items-center gap-2">
-            <button type="button" class="btn btn-secondary" @click="v2Open = true">{{ t('admin.riskControl.v2Title') }}</button>
             <button type="button" class="btn btn-secondary inline-flex items-center gap-2" :disabled="statusLoading" @click="loadStatus(false)">
               <Icon name="refresh" size="sm" :class="statusLoading ? 'animate-spin' : ''" />
               {{ t('admin.riskControl.refreshStatus') }}
@@ -409,6 +408,7 @@
                 <Select v-model="configForm.mode" :options="modeOptions" />
                 <p class="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ modeDescription(configForm.mode) }}</p>
               </div>
+              <template v-if="!channels?.enabled">
               <div>
                 <label class="input-label">{{ t('admin.riskControl.engine') }}</label>
                 <Select data-test="audit-engine-select" :model-value="configForm.engine" :options="engineOptions" :disabled="apiKeyTesting || saving" @update:model-value="switchEngine" />
@@ -445,9 +445,19 @@
                 <ProxySelector v-model="configForm.proxy_id" :proxies="proxies" />
                 <p class="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.proxyHint') }}</p>
               </div>
+              </template>
+              <label v-if="channels?.enabled" class="input-label">{{ t('admin.riskControl.sampleRate') }}<input v-model.number="configForm.sample_rate" type="number" min="0" max="100" step="1" class="input" /></label>
             </div>
+            <div v-if="channels" class="space-y-3 rounded-xl bg-primary-50 p-4 dark:bg-primary-950/30">
+              <label class="flex items-center gap-3 text-sm font-medium"><input v-model="channels.enabled" data-test="channel-mode" type="checkbox" />{{ t('moderationV2.channelMode') }}</label>
+              <p class="text-sm leading-6 text-gray-600 dark:text-gray-300">{{ t('moderationV2.channelModeHint') }}</p>
+            </div>
+            <template v-if="channels?.enabled">
+              <ContentModerationChannels v-model="channels" section="services" />
+              <ContentModerationChannels v-model="channels" section="trial" />
+            </template>
 
-            <div class="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm dark:border-dark-700 dark:bg-dark-800">
+            <div v-if="!channels?.enabled" class="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm dark:border-dark-700 dark:bg-dark-800">
               <div class="flex flex-col gap-4 border-b border-gray-100 bg-gray-50 px-4 py-4 dark:border-dark-700 dark:bg-dark-800/60 lg:flex-row lg:items-center lg:justify-between">
                 <div class="flex items-start gap-3">
                   <span class="mt-0.5 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600 dark:bg-primary-900/30 dark:text-primary-300">
@@ -724,6 +734,9 @@
           </div>
 
 
+          <div v-else-if="activeSettingsTab === 'customCode' && channels?.enabled" class="space-y-5">
+            <ContentModerationChannels v-model="channels" section="prompt" />
+          </div>
           <div v-else-if="activeSettingsTab === 'customCode'" class="space-y-5">
             <p v-if="configForm.engine === 'typesafe'" class="rounded-xl bg-gray-50 p-4 text-sm leading-6 text-gray-600 dark:bg-dark-900 dark:text-dark-300">
               {{ t('admin.riskControl.customCodeTypeSafe') }}
@@ -873,7 +886,8 @@
             </div>
           </div>
 
-          <div v-else-if="activeSettingsTab === 'runtime'" class="grid grid-cols-1 gap-5 lg:grid-cols-2">
+          <div v-else-if="activeSettingsTab === 'runtime'" class="space-y-5">
+            <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
             <div>
               <label class="input-label">{{ t('admin.riskControl.workerCount') }}</label>
               <input v-model.number="configForm.worker_count" type="number" min="1" max="32" class="input" />
@@ -889,7 +903,7 @@
               </div>
               <Toggle v-model="configForm.record_non_hits" />
             </div>
-            <div class="space-y-4 rounded-lg border border-gray-100 p-4 dark:border-dark-700 lg:col-span-2">
+            <div v-if="!channels?.enabled" class="space-y-4 rounded-lg border border-gray-100 p-4 dark:border-dark-700 lg:col-span-2">
               <div class="flex items-center justify-between gap-4">
                 <div>
                   <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.riskControl.preHashCheck') }}</p>
@@ -934,6 +948,11 @@
                 </div>
               </div>
             </div>
+            </div>
+            <ContentModerationChannels v-if="channels?.enabled" v-model="channels" section="policy" />
+          </div>
+          <div v-else-if="activeSettingsTab === 'auditUsage' && channels" class="space-y-5">
+            <ContentModerationChannels v-model="channels" section="usage" />
           </div>
 
           <div v-else-if="activeSettingsTab === 'response'" class="space-y-5">
@@ -978,6 +997,10 @@
             </div>
           </div>
 
+          <div v-else-if="activeSettingsTab === 'riskThresholds' && channels?.enabled" class="space-y-4">
+            <p class="text-sm text-gray-600 dark:text-gray-300">{{ t('moderationV2.channelThresholdHint') }}</p>
+            <button type="button" class="btn btn-secondary" @click="activeSettingsTab = 'basic'">{{ t('admin.riskControl.tabs.basic') }}</button>
+          </div>
           <div v-else-if="activeSettingsTab === 'riskThresholds' && configForm.engine === 'openai' && configForm.api_format === 'chat_completions'" class="space-y-4">
             <p class="text-sm leading-6 text-gray-600 dark:text-dark-300">{{ t('admin.riskControl.chatThresholdsHint') }}</p>
             <button type="button" class="btn btn-secondary" @click="activeSettingsTab = 'customCode'">{{ t('admin.riskControl.customCode') }}</button>
@@ -1202,7 +1225,6 @@
         </template>
       </BaseDialog>
     </div>
-    <ContentModerationV2Panel v-if="v2Open" @close="v2Open = false" @saved="loadStatus(false)" />
   </AppLayout>
 </template>
 
@@ -1212,7 +1234,8 @@ import { computed, onMounted, onUnmounted, reactive, ref, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
-import ContentModerationV2Panel from '@/components/admin/ContentModerationV2Panel.vue'
+import ContentModerationChannels from '@/components/admin/ContentModerationChannels.vue'
+import type { AuditConfig } from '@/api/admin/moderationV2'
 import Icon from '@/components/icons/Icon.vue'
 import Select from '@/components/common/Select.vue'
 import Toggle from '@/components/common/Toggle.vue'
@@ -1240,7 +1263,7 @@ import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import { formatDateTime as formatDateTimeValue } from '@/utils/format'
 
-type SettingsTab = 'customCode' | 'basic' | 'scope' | 'runtime' | 'response' | 'riskThresholds' | 'retention' | 'keywords'
+type SettingsTab = 'customCode' | 'basic' | 'scope' | 'runtime' | 'response' | 'riskThresholds' | 'retention' | 'keywords' | 'auditUsage'
 type WorkerSlotState = 'active' | 'idle' | 'disabled'
 type APIKeysWriteMode = 'append' | 'replace'
 type OverviewIcon = 'shield' | 'key' | 'users' | 'document'
@@ -1289,7 +1312,7 @@ const riskThresholdCategories = Object.keys(riskThresholdDefaults)
 
 const { t } = useI18n()
 const appStore = useAppStore()
-const v2Open = ref(false)
+const channels = ref<AuditConfig>()
 const defaultBlockMessage = () => t('admin.riskControl.defaultBlockMessage')
 
 const loading = ref(true)
@@ -1437,6 +1460,7 @@ const settingsTabs = computed<Array<{ id: SettingsTab; label: string }>>(() => [
   { id: 'customCode', label: t('admin.riskControl.customCode') },
   { id: 'scope', label: t('admin.riskControl.tabs.scope') },
   { id: 'runtime', label: t('admin.riskControl.tabs.runtime') },
+  ...(channels.value?.enabled ? [{ id: 'auditUsage' as const, label: t('moderationV2.usage') }] : []),
   { id: 'response', label: t('admin.riskControl.tabs.response') },
   { id: 'riskThresholds', label: t('admin.riskControl.tabs.riskThresholds') },
   { id: 'keywords', label: t('admin.riskControl.tabs.keywords') },
@@ -1869,6 +1893,9 @@ const runtimeBadgeClass = computed(() => {
 })
 
 function applyConfig(config: ContentModerationConfig) {
+  channels.value = config.channels ? structuredClone(config.channels) : undefined
+  if (channels.value && !channels.value.routing) channels.value.routing = channels.value.revision ? 'priority' : 'lowest_cost'
+
   savedEngine.value = config.engine ?? 'openai'
   configForm.engine = savedEngine.value
   configForm.enabled = config.enabled
@@ -2024,6 +2051,15 @@ async function saveConfig() {
 
     engineDrafts.value[configForm.engine] = captureEngineDraft()
     payload.engine_configs = Object.fromEntries(Object.entries(engineDrafts.value).map(([engine, draft]) => [engine, engineDraftPayload(draft)]))
+    if (channels.value) {
+      const draft: AuditConfig = JSON.parse(JSON.stringify(channels.value))
+      for (const p of draft.providers) {
+        const keys = p.key_draft?.split(/\r?\n/).map(v => v.trim()).filter(Boolean)
+        delete p.key_draft; delete p.key_masks; delete p.api_keys
+        if (keys?.length && !p.clear_keys) p.api_keys = keys
+      }
+      payload.channels = draft
+    }
     const updated = await adminAPI.riskControl.updateConfig(payload)
     applyConfig(updated)
     settingsOpen.value = false

@@ -145,3 +145,38 @@ func TestModerationV2PostgresAccounting(t *testing.T) {
 		require.EqualValues(t, 1, summary.CacheHits)
 	})
 }
+
+func TestModerationChannelsAtomicSettings(t *testing.T) {
+	ctx := context.Background()
+	r := &contentModerationRepository{db: integrationDB}
+	keys := []string{service.SettingKeyContentModerationV2, service.SettingKeyContentModerationConfig}
+	previous := map[string]string{}
+	for _, key := range keys {
+		var raw string
+		if integrationDB.QueryRowContext(ctx, `SELECT value FROM settings WHERE key=$1`, key).Scan(&raw) == nil {
+			previous[key] = raw
+		}
+	}
+	t.Cleanup(func() {
+		for _, key := range keys {
+			if raw, ok := previous[key]; ok {
+				_, _ = integrationDB.ExecContext(ctx, `INSERT INTO settings(key,value) VALUES($1,$2) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`, key, raw)
+			} else {
+				_, _ = integrationDB.ExecContext(ctx, `DELETE FROM settings WHERE key=$1`, key)
+			}
+		}
+	})
+	_, err := integrationDB.ExecContext(ctx, `INSERT INTO settings(key,value) VALUES($1,'{"revision":1}') ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`, keys[0])
+	require.NoError(t, err)
+	_, err = integrationDB.ExecContext(ctx, `INSERT INTO settings(key,value) VALUES($1,'{"mode":"pre_block"}') ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`, keys[1])
+	require.NoError(t, err)
+	require.ErrorIs(t, r.SaveContentModerationChannels(ctx, 0, `{"revision":2}`, `{"mode":"observe"}`), service.ErrModerationV2Conflict)
+	var shared string
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT value FROM settings WHERE key=$1`, keys[1]).Scan(&shared))
+	require.JSONEq(t, `{"mode":"pre_block"}`, shared)
+	require.NoError(t, r.SaveContentModerationChannels(ctx, 1, `{"revision":2}`, `{"mode":"observe"}`))
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT value FROM settings WHERE key=$1`, keys[1]).Scan(&shared))
+	require.JSONEq(t, `{"mode":"observe"}`, shared)
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT value FROM settings WHERE key=$1`, keys[0]).Scan(&shared))
+	require.JSONEq(t, `{"revision":2}`, shared)
+}

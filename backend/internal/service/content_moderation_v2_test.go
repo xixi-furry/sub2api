@@ -17,14 +17,15 @@ import (
 
 type v2TestStore struct {
 	contentModerationTestRepo
-	mutex        sync.Mutex
-	settings     *contentModerationTestSettingRepo
-	reservations []ModerationV2Reservation
-	settlements  []ModerationV2Settlement
-	cache        map[string]ModerationV2Verdict
-	events       map[string]bool
-	reserveErr   error
-	settleErr    error
+	mutex          sync.Mutex
+	settings       *contentModerationTestSettingRepo
+	reservations   []ModerationV2Reservation
+	settlements    []ModerationV2Settlement
+	cache          map[string]ModerationV2Verdict
+	events         map[string]bool
+	reserveErr     error
+	providerErrors map[string]error
+	settleErr      error
 }
 
 func (r *v2TestStore) SaveModerationV2Config(_ context.Context, revision int64, raw string) error {
@@ -39,6 +40,9 @@ func (r *v2TestStore) SaveModerationV2Config(_ context.Context, revision int64, 
 func (r *v2TestStore) ReserveModerationV2(_ context.Context, v ModerationV2Reservation) error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
+	if e := r.providerErrors[v.ProviderID]; e != nil {
+		return e
+	}
 	if r.reserveErr != nil {
 		return r.reserveErr
 	}
@@ -301,4 +305,12 @@ func TestModerationV2SettlementFailureCannotCacheOrPass(t *testing.T) {
 	require.Equal(t, "settlement_pending", result.Reason)
 	require.Empty(t, store.cache)
 	require.Equal(t, 503, moderationV2Decision(result, cfg, shared).StatusCode)
+}
+
+func (r *v2TestStore) SaveContentModerationChannels(ctx context.Context, revision int64, raw, shared string) error {
+	if e := r.SaveModerationV2Config(ctx, revision, raw); e != nil {
+		return e
+	}
+	r.settings.values[SettingKeyContentModerationConfig] = shared
+	return nil
 }

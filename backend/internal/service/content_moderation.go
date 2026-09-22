@@ -178,6 +178,7 @@ type ContentModerationConfig struct {
 }
 
 type ContentModerationConfigView struct {
+	Channels *ModerationV2Config `json:"channels,omitempty"`
 	ContentModerationCustomConfig
 	Engine                         string                                  `json:"engine"`
 	EngineConfigs                  map[string]*ContentModerationConfigView `json:"engine_configs,omitempty"`
@@ -276,6 +277,7 @@ type ContentModerationTestAuditResult struct {
 }
 
 type UpdateContentModerationConfigInput struct {
+	Channels *ModerationV2Config `json:"channels,omitempty"`
 	ContentModerationCustomInput
 	Engine        *string                                       `json:"engine"`
 	EngineConfigs map[string]UpdateContentModerationEngineInput `json:"engine_configs"`
@@ -629,7 +631,13 @@ func (s *ContentModerationService) GetConfig(ctx context.Context) (*ContentModer
 	if err != nil {
 		return nil, err
 	}
-	return s.engineConfigView(cfg), nil
+	view := s.engineConfigView(cfg)
+	channels, err := s.GetModerationV2Config(ctx)
+	if err != nil {
+		return nil, err
+	}
+	view.Channels = channels
+	return view, nil
 }
 
 func (s *ContentModerationService) UpdateConfig(ctx context.Context, input UpdateContentModerationConfigInput) (*ContentModerationConfigView, error) {
@@ -728,13 +736,41 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 	if err != nil {
 		return nil, fmt.Errorf("marshal content moderation config: %w", err)
 	}
-	if err := s.settingRepo.Set(ctx, SettingKeyContentModerationConfig, string(raw)); err != nil {
-		return nil, fmt.Errorf("save content moderation config: %w", err)
+	var channels *ModerationV2Config
+	if input.Channels != nil {
+		channels, err = s.prepareModerationV2Config(ctx, *input.Channels)
+		if err != nil {
+			return nil, err
+		}
+		store, ok := s.repo.(interface {
+			SaveContentModerationChannels(context.Context, int64, string, string) error
+		})
+		if !ok {
+			return nil, errors.New("atomic moderation configuration storage unavailable")
+		}
+		channelRaw, e := json.Marshal(channels)
+		if e != nil {
+			return nil, e
+		}
+		if e = store.SaveContentModerationChannels(ctx, input.Channels.Revision, string(channelRaw), string(raw)); e != nil {
+			return nil, e
+		}
+		s.runtimeRefreshMu.Lock()
+		s.runtimeSnapshot.Store(nil)
+		s.runtimeRefreshMu.Unlock()
+	} else {
+		if err := s.settingRepo.Set(ctx, SettingKeyContentModerationConfig, string(raw)); err != nil {
+			return nil, fmt.Errorf("save content moderation config: %w", err)
+		}
+		s.replaceRuntimeConfig(cfg, raw)
 	}
-	s.replaceRuntimeConfig(cfg, raw)
 	// 代理选择可能已变化，丢弃已解析的代理 URL 缓存，下次调用即时生效。
 	s.moderationProxyCache.Store(nil)
-	return s.engineConfigView(cfg), nil
+	view := s.engineConfigView(cfg)
+	if channels != nil {
+		view.Channels = moderationV2Public(channels)
+	}
+	return view, nil
 }
 
 func (s *ContentModerationService) TestAPIKeys(ctx context.Context, input TestContentModerationAPIKeysInput) (*TestContentModerationAPIKeysResult, error) {

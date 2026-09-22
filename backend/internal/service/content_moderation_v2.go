@@ -36,6 +36,7 @@ type ModerationV2Prices struct {
 	PerRequest  string `json:"per_request"`
 }
 type ModerationV2Provider struct {
+	AuditValidated      bool               `json:"audit_validated"`
 	ID                  string             `json:"id"`
 	Name                string             `json:"name"`
 	Enabled             bool               `json:"enabled"`
@@ -58,6 +59,7 @@ type ModerationV2Provider struct {
 	Limits              ModerationV2Limits `json:"limits"`
 }
 type ModerationV2Config struct {
+	Routing          string                 `json:"routing"`
 	Revision         int64                  `json:"revision"`
 	Enabled          bool                   `json:"enabled"`
 	Currency         string                 `json:"currency"`
@@ -217,11 +219,7 @@ func (s *ContentModerationService) GetModerationV2Config(ctx context.Context) (*
 	}
 	return moderationV2Public(cfg), nil
 }
-func (s *ContentModerationService) UpdateModerationV2Config(ctx context.Context, cfg ModerationV2Config) (*ModerationV2Config, error) {
-	store, err := s.moderationV2Store()
-	if err != nil {
-		return nil, err
-	}
+func (s *ContentModerationService) prepareModerationV2Config(ctx context.Context, cfg ModerationV2Config) (*ModerationV2Config, error) {
 	old, err := s.loadModerationV2Config(ctx)
 	if err != nil {
 		return nil, err
@@ -258,19 +256,30 @@ func (s *ContentModerationService) UpdateModerationV2Config(ctx context.Context,
 		return nil, err
 	}
 	cfg.Revision++
-	raw, err := json.Marshal(cfg)
-	if err != nil {
-		return nil, err
+	return &cfg, nil
+}
+func (s *ContentModerationService) UpdateModerationV2Config(ctx context.Context, draft ModerationV2Config) (*ModerationV2Config, error) {
+	store, e := s.moderationV2Store()
+	if e != nil {
+		return nil, e
 	}
-	if err := store.SaveModerationV2Config(ctx, old.Revision, string(raw)); err != nil {
-		return nil, err
+	cfg, e := s.prepareModerationV2Config(ctx, draft)
+	if e != nil {
+		return nil, e
 	}
-	// Other nodes refresh normally; reservation also checks revision atomically.
+	raw, e := json.Marshal(cfg)
+	if e != nil {
+		return nil, e
+	}
+	if e = store.SaveModerationV2Config(ctx, draft.Revision, string(raw)); e != nil {
+		return nil, e
+	}
 	s.runtimeRefreshMu.Lock()
 	s.runtimeSnapshot.Store(nil)
 	s.runtimeRefreshMu.Unlock()
-	return moderationV2Public(&cfg), nil
+	return moderationV2Public(cfg), nil
 }
+
 func decimalValue(raw string) (decimal.Decimal, error) {
 	if raw == "" {
 		return decimal.Zero, nil
@@ -286,6 +295,13 @@ func decimalValue(raw string) (decimal.Decimal, error) {
 }
 func validateModerationV2Config(ctx context.Context, c *ModerationV2Config) error {
 	bad := func(s string) error { return infraerrors.BadRequest("INVALID_MODERATION_V2", s) }
+	if c.Routing == "" {
+		c.Routing = "priority"
+	}
+	if c.Routing != "priority" && c.Routing != "lowest_cost" {
+		return bad("审核渠道选择方式无效 / Invalid routing policy")
+	}
+
 	if c.Revision < 0 || len(c.Providers) > 20 || len(c.FallbackIDs) > 1 || c.MaxAttempts < 1 || c.MaxAttempts > 2 || c.CacheTTLSeconds < 0 || c.CacheTTLSeconds > 86400 {
 		return bad("最多 20 个服务、2 次调用；缓存 0–86400 秒 / Invalid limits")
 	}
@@ -355,6 +371,18 @@ func validateModerationV2Config(ctx context.Context, c *ModerationV2Config) erro
 		if (c.Limits.DailyAmount != "" || p.Limits.DailyAmount != "") && (p.Prices.Input == "" || p.Prices.Output == "" || !p.OutputLimitVerified) {
 			return bad("使用金额预算前请填写价格，并确认运营商支持输出上限 / Monetary caps require prices and verified output limits")
 		}
+	}
+	if c.Routing == "lowest_cost" {
+		eligible := 0
+		for _, p := range c.Providers {
+			if p.Enabled && p.AuditValidated && p.Prices.Input != "" && p.Prices.Output != "" && p.OutputLimitVerified {
+				eligible++
+			}
+		}
+		if c.Enabled && eligible == 0 {
+			return bad("自动择价至少需要一个已验证审核效果、填写价格并确认输出限制的渠道 / Configure a priced channel with verified output limits")
+		}
+		return nil
 	}
 	route := append([]string{c.PrimaryID}, c.FallbackIDs...)
 	used := map[string]bool{}

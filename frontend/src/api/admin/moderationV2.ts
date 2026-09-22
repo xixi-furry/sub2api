@@ -3,14 +3,14 @@ import { apiClient } from '../client'
 export interface AuditLimits { daily_calls: number; daily_tokens: number; daily_amount: string }
 export interface AuditPrices { input: string; cached_input: string; output: string; per_request: string }
 export interface AuditProvider {
-  id: string; name: string; enabled: boolean; base_url: string; model: string; proxy_id: number | null
-  api_keys?: string[]; key_masks?: string[]; clear_keys?: boolean
+  audit_validated?: boolean; id: string; name: string; enabled: boolean; base_url: string; model: string; proxy_id: number | null
+  key_draft?: string; api_keys?: string[]; key_masks?: string[]; clear_keys?: boolean
   audit_prompt: string; payload_script: string; threshold: number; timeout_ms: number
   max_input_tokens: number; max_output_tokens: number; output_parameter: 'max_tokens' | 'max_completion_tokens'
   output_limit_verified: boolean; max_concurrent: number; prices: AuditPrices; limits: AuditLimits
 }
 export interface AuditConfig {
-  revision: number; enabled: boolean; currency: 'CNY' | 'USD'; unresolved_policy: '' | 'reject_temporary' | 'allow_record'
+  routing?: 'priority' | 'lowest_cost'; revision: number; enabled: boolean; currency: 'CNY' | 'USD'; unresolved_policy: '' | 'reject_temporary' | 'allow_record'
   primary_id: string; fallback_ids: string[]; max_attempts: number; cache_ttl_seconds: number
   limits: AuditLimits; providers: AuditProvider[]
 }

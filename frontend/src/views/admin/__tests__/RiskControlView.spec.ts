@@ -225,6 +225,20 @@ describe('admin RiskControlView', () => {
   })
 
 
+  it('edits channels inside the original dialog and saves through the original endpoint', async () => {
+    getConfig.mockResolvedValue({ ...baseConfig(), channels: { revision: 3, enabled: false, routing: 'lowest_cost', currency: 'CNY', unresolved_policy: 'reject_temporary', primary_id: '', fallback_ids: [], max_attempts: 2, cache_ttl_seconds: 900, limits: { daily_calls: 0, daily_tokens: 0, daily_amount: '' }, providers: [] } })
+    const wrapper = mount(RiskControlView, { global: { stubs: { AppLayout: AppLayoutStub, BaseDialog: BaseDialogStub, Icon: true, Select: true, Toggle: true, Pagination: true, ModelWhitelistSelector: ModelWhitelistSelectorStub, ProxySelector: true, ContentModerationChannels: true } } })
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('admin.riskControl.v2Title')
+    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+    await wrapper.get('[data-test="channel-mode"]').setValue(true)
+    expect(wrapper.find('[data-test="audit-base-url"]').exists()).toBe(false)
+    await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click'); await flushPromises()
+    expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({ channels: expect.objectContaining({ enabled: true, routing: 'lowest_cost', revision: 3 }) }))
+    expect(showError).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('round-trips custom code, preserves it across engine changes and saves both drafts', async () => {
     getConfig.mockResolvedValue({ ...baseConfig(), api_format: 'chat_completions', audit_prompt: 'saved policy', payload_script: 'const requestBody = {}', confidence_threshold: 0.9 })
     const wrapper = mount(RiskControlView, { global: { stubs: { AppLayout: AppLayoutStub, BaseDialog: BaseDialogStub, Icon: true, Select: true, Toggle: true, Pagination: true, ModelWhitelistSelector: ModelWhitelistSelectorStub, ProxySelector: true } } })
