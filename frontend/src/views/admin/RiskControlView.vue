@@ -26,6 +26,9 @@
         <p class="text-sm text-gray-600 dark:text-gray-300" data-test="active-audit-engine">
           {{ status?.v2_enabled ? t('admin.riskControl.v2Active') : t('admin.riskControl.activeEngine', { engine: engineLabel(status?.engine ?? savedEngine) }) }}
         </p>
+        <p v-if="status?.v2_enabled" class="text-sm text-gray-500 dark:text-gray-400" data-test="saved-audit-mode">
+          {{ t(`moderationV2.${savedChannelMode}ModeShort`) }}
+        </p>
         <p v-if="!status?.v2_enabled && status?.enabled && status.risk_control_enabled && status.mode !== 'off' && status.pre_block_api_key_available_count === 0" class="text-sm text-amber-700 dark:text-amber-300" role="status">
           {{ t('admin.riskControl.engineUnavailable') }}
         </p>
@@ -381,7 +384,7 @@
 
       <BaseDialog :show="settingsOpen" :title="t('admin.riskControl.settingsTitle')" width="extra-wide" @close="settingsOpen = false">
         <div class="space-y-6">
-          <div class="flex gap-2 overflow-x-auto border-b border-gray-100 pb-3 dark:border-dark-700">
+          <div class="flex flex-wrap gap-2 border-b border-gray-100 pb-3 dark:border-dark-700">
             <button
               v-for="tab in settingsTabs"
               :key="tab.id"
@@ -392,6 +395,7 @@
             >
               {{ tab.label }}
             </button>
+            <button type="button" class="ml-auto rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-dark-700" :aria-expanded="advancedSettings" data-test="advanced-settings" @click="toggleAdvancedSettings">{{ t(advancedSettings ? 'moderationV2.lessSettings' : 'moderationV2.moreSettings') }}</button>
           </div>
 
           <div v-if="activeSettingsTab === 'basic'" class="space-y-5">
@@ -406,7 +410,7 @@
               <div>
                 <label class="input-label">{{ t('admin.riskControl.mode') }}</label>
                 <Select v-model="configForm.mode" :options="modeOptions" />
-                <p class="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ modeDescription(configForm.mode) }}</p>
+                <p class="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ channels?.enabled ? t('moderationV2.channelModeDescription', { mode: modeLabel(configForm.mode) }) : modeDescription(configForm.mode) }}</p>
               </div>
               <template v-if="!channels?.enabled">
               <div>
@@ -446,15 +450,15 @@
                 <p class="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.proxyHint') }}</p>
               </div>
               </template>
-              <label v-if="channels?.enabled" class="input-label">{{ t('admin.riskControl.sampleRate') }}<input v-model.number="configForm.sample_rate" type="number" min="0" max="100" step="1" class="input" /></label>
+              <label v-if="channels?.enabled" class="input-label">{{ t('admin.riskControl.sampleRate') }} (%)<input v-model.number="configForm.sample_rate" type="number" min="0" max="100" step="1" class="input" /></label>
             </div>
             <div v-if="channels" class="space-y-3 rounded-xl bg-primary-50 p-4 dark:bg-primary-950/30">
               <label class="flex items-center gap-3 text-sm font-medium"><input v-model="channels.enabled" data-test="channel-mode" type="checkbox" />{{ t('moderationV2.channelMode') }}</label>
-              <p class="text-sm leading-6 text-gray-600 dark:text-gray-300">{{ t('moderationV2.channelModeHint') }}</p>
+              <p class="text-sm leading-6 text-gray-600 dark:text-gray-300" data-test="audit-path-hint">{{ t(channels.enabled ? 'moderationV2.newPathHint' : 'moderationV2.oldPathHint') }}</p>
             </div>
             <template v-if="channels?.enabled">
+              <ContentModerationChannels v-model="channels" section="policy" />
               <ContentModerationChannels v-model="channels" section="services" />
-              <ContentModerationChannels v-model="channels" section="trial" />
             </template>
 
             <div v-if="!channels?.enabled" class="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm dark:border-dark-700 dark:bg-dark-800">
@@ -949,7 +953,10 @@
               </div>
             </div>
             </div>
-            <ContentModerationChannels v-if="channels?.enabled" v-model="channels" section="policy" />
+
+          </div>
+          <div v-else-if="activeSettingsTab === 'auditTrial' && channels?.enabled" class="space-y-5">
+            <ContentModerationChannels v-model="channels" section="trial" />
           </div>
           <div v-else-if="activeSettingsTab === 'auditUsage' && channels" class="space-y-5">
             <ContentModerationChannels v-model="channels" section="usage" />
@@ -1273,7 +1280,7 @@ import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import { formatDateTime as formatDateTimeValue } from '@/utils/format'
 
-type SettingsTab = 'customCode' | 'basic' | 'scope' | 'runtime' | 'response' | 'riskThresholds' | 'retention' | 'keywords' | 'auditUsage'
+type SettingsTab = 'customCode' | 'basic' | 'scope' | 'runtime' | 'response' | 'riskThresholds' | 'retention' | 'keywords' | 'auditUsage' | 'auditTrial'
 type WorkerSlotState = 'active' | 'idle' | 'disabled'
 type APIKeysWriteMode = 'append' | 'replace'
 type OverviewIcon = 'shield' | 'key' | 'users' | 'document'
@@ -1323,6 +1330,7 @@ const riskThresholdCategories = Object.keys(riskThresholdDefaults)
 const { t, te } = useI18n()
 const appStore = useAppStore()
 const channels = ref<AuditConfig>()
+const savedChannelMode = ref('legacy')
 const defaultBlockMessage = () => t('admin.riskControl.defaultBlockMessage')
 
 const loading = ref(true)
@@ -1334,6 +1342,7 @@ const hashActionLoading = ref(false)
 const unbanningUserID = ref<number | null>(null)
 const settingsOpen = ref(false)
 const activeSettingsTab = ref<SettingsTab>('basic')
+const advancedSettings = ref(false)
 const groupSearch = ref('')
 const flaggedHashInput = ref('')
 const groups = ref<AdminGroup[]>([])
@@ -1466,16 +1475,24 @@ const filters = reactive({
 })
 
 const settingsTabs = computed<Array<{ id: SettingsTab; label: string }>>(() => [
-  { id: 'basic', label: t('admin.riskControl.tabs.basic') },
-  { id: 'customCode', label: t('admin.riskControl.customCode') },
-  { id: 'scope', label: t('admin.riskControl.tabs.scope') },
-  { id: 'runtime', label: t('admin.riskControl.tabs.runtime') },
-  ...(channels.value?.enabled ? [{ id: 'auditUsage' as const, label: t('moderationV2.usage') }] : []),
-  { id: 'response', label: t('admin.riskControl.tabs.response') },
-  { id: 'riskThresholds', label: t('admin.riskControl.tabs.riskThresholds') },
-  { id: 'keywords', label: t('admin.riskControl.tabs.keywords') },
-  { id: 'retention', label: t('admin.riskControl.tabs.retention') },
+  { id: 'basic', label: t(channels.value?.enabled ? 'moderationV2.setupTab' : 'admin.riskControl.tabs.basic') },
+  ...(channels.value?.enabled ? [
+    { id: 'auditTrial' as const, label: t('moderationV2.trialTab') },
+    { id: 'auditUsage' as const, label: t('moderationV2.budgetTab') },
+  ] : [{ id: 'customCode' as const, label: t('admin.riskControl.customCode') }]),
+  ...(advancedSettings.value ? [
+    { id: 'scope' as const, label: t('admin.riskControl.tabs.scope') },
+    { id: 'runtime' as const, label: t('admin.riskControl.tabs.runtime') },
+    { id: 'response' as const, label: t('admin.riskControl.tabs.response') },
+    ...(!channels.value?.enabled ? [{ id: 'riskThresholds' as const, label: t('admin.riskControl.tabs.riskThresholds') }] : []),
+    { id: 'keywords' as const, label: t('admin.riskControl.tabs.keywords') },
+    { id: 'retention' as const, label: t('admin.riskControl.tabs.retention') },
+  ] : []),
 ])
+function toggleAdvancedSettings() {
+  advancedSettings.value = !advancedSettings.value
+  if (!settingsTabs.value.some(tab => tab.id === activeSettingsTab.value)) activeSettingsTab.value = 'basic'
+}
 
 const modeOptions = computed<SelectOption[]>(() => [
   { value: 'pre_block', label: t('admin.riskControl.modePreBlock') },
@@ -1903,6 +1920,7 @@ const runtimeBadgeClass = computed(() => {
 })
 
 function applyConfig(config: ContentModerationConfig) {
+  savedChannelMode.value = config.channels?.policy?.mode || 'legacy'
   channels.value = config.channels ? structuredClone(config.channels) : undefined
   if (channels.value && !channels.value.routing) channels.value.routing = channels.value.revision ? 'priority' : 'lowest_cost'
 
@@ -2173,6 +2191,7 @@ async function clearFlaggedHashes() {
 }
 
 function openSettings() {
+  advancedSettings.value = false
   activeSettingsTab.value = 'basic'
   settingsOpen.value = true
 }

@@ -1,5 +1,22 @@
 export const moderationV2Messages = {
   zh: {
+    channelModeDescription: '模型审核沿用所选“{mode}”处置方式；送审范围由下方上下文策略决定。',
+    setupTab: "审核配置",
+    trialTab: "试跑",
+    budgetTab: "预算",
+    moreSettings: "更多设置",
+    lessSettings: "收起更多设置",
+    newPathHint: "保存后使用下方模型渠道。均衡或质量优先支持上下文审核和复审；原有范围、抽样、拦截及封禁设置仍然生效。",
+    oldPathHint: "保存后继续使用原审核引擎，不使用新版上下文策略或分级复审。开启此选项后才能配置新版方案；原配置会保留。",
+    providerAdvanced: "高级设置：接口、限额与自定义请求",
+    pricingSettings: "价格与费用控制",
+    policyAdvanced: "高级设置：时间、调用与上下文限制",
+    promptSimpleHint: "填写审核规则即可，通常无需编写 payload。",
+    legacyModeShort: "仅审核末条用户文字，不做分级复审；不会自动启用新版上下文方案。",
+    balancedModeShort: "先初审，遇到命中或不确定时交给强审渠道。需要配置初审与强审用途的渠道。",
+    qualityModeShort: "直接由强审渠道审核，适合优先关注审核质量的场景；渠道仍需用真实样本验证。",
+    routingShort: "自动择价需要填写各渠道实际价格并确认审核效果、输出上限；也可手动指定渠道。",
+
 
     "purpose": "渠道用途",
     "primaryPurpose": "初审",
@@ -17,11 +34,11 @@ export const moderationV2Messages = {
     "generationHint": "参数支持范围由渠道决定，请先试跑。总超时包含思考和输出时间；流式心跳只重置空闲等待，不延长总时限。Responses 固定使用 max_output_tokens，不发送 temperature；输出预算须包含计费思考 token。非流式无法单独测量首字时间。",
     "auditMode": "审核模式",
     "legacyMode": "兼容模式：当前用户文字",
-    "balancedMode": "均衡审核：初审，必要时强审",
+    "balancedMode": "均衡：先初审，必要时复审",
     "qualityMode": "质量优先：直接强审",
     "modeHint": "均衡模式在初审命中、接近阈值、不确定或调用失败时升级强审。质量优先只选择经管理员验证的强审渠道。同等级渠道内才比较价格。增强模式需选择未完成时临时拒绝；仍遵守总开关、范围、采样和观察模式。",
     "contextMode": "送审上下文",
-    "boundedContext": "必要历史：当前请求 + 初始目标 + 最近内容",
+    "boundedContext": "必要历史：目标与近期内容",
     "fullContext": "完整上下文：本次请求携带的全部内容",
     "currentContext": "当前请求",
     "contextHint": "完整上下文不代表能读取客户端未发送的历史。必要历史保留当前文字和工具续接、初始用户目标及最近明确目标；超限或隐藏的会话引用会标记未完成。完整模式超限时不截断放行。图片与非文字附件暂不支持。",
@@ -47,10 +64,10 @@ export const moderationV2Messages = {
     "history": "历史"
 ,
 
-    auditValidated: '已验证该渠道的审核效果，允许参与自动择价', auditValidatedHint: '先用指定主渠道模式测试正常和违规样本，再由管理员确认。此标记不代表系统已测得准确率。', selectedChannel: '预估选择的渠道（调用时仍需检查可用额度）',
+    auditValidated: '已用样本验证此渠道的审核效果', auditValidatedHint: '先用兼容模式、手动指定渠道试跑正常和违规样本，再确认。此勾选不会自动验证模型。', selectedChannel: '预估选择的渠道（调用时仍需检查可用额度）',
 
     channelMode: '使用通用模型审核渠道', channelModeHint: '在此配置不同运营商和模型。系统按运行配置选择渠道，沿用本页的范围、拦截、封禁和日志设置。',
-    routing: '渠道选择方式', cheapest: '自动择价：满足输入要求的已启用渠道中，预估费用较低者优先', priority: '指定主渠道和备用渠道',
+    routing: '渠道选择方式', cheapest: '自动选择费用较低的合格渠道', priority: '指定主渠道和备用渠道',
     routingHint: '每家渠道单独填写价格。按完整输入和最大输出计算单次费用预留，不假设缓存命中；未验证审核效果、价格未知或未确认输出限制的渠道不参与自动择价。故障或服务额度不足时尝试下一可用渠道，实际调用仍受总次数和全站预算限制。',
     channelPromptHint: '每个渠道使用自己的提示词和可选 payload。请为参与自动选择的模型配置相同审核目标，并先用同一组样本验证。',
     channelThresholdHint: '通用模型的拦截阈值在基本设置的各审核渠道中配置；不同模型的分数不能直接视为相同尺度。',
@@ -73,6 +90,23 @@ export const moderationV2Messages = {
     reasons: { "no_qualified_channel": "没有符合审核等级的可用渠道", "invalid_or_oversized_input": "输入无效或超过解析上限", "context_limit_exceeded": "完整上下文超过历史预算", "required_context_exceeds_limit": "必要目标或历史超出预算", "missing_context": "缺少所引用的历史上下文", "request_budget_exhausted": "本次审核金额预算不足", "request_deadline_exceeded": "已达到整个审核的总时限", "invalid_evidence_reference": "模型引用了未提供的证据", "review_required": "初审结果需要强审", "review_unresolved": "强审仍不确定或证据不足", "review_disagreement": "初审命中与强审放行存在冲突", no_priced_channel: '没有满足自动择价条件的渠道', unsupported_input_parts: '输入包含当前模式不支持的附件或工具内容', provider_cooldown_or_limit: '服务冷却或达到上限', input_budget_exceeded: '输入超出预算', images_not_supported: '当前模式不支持图片', no_current_user_text: '缺少可审核的当前用户文字', budget_or_concurrency_exhausted: '预算或并发额度不足', provider_unavailable: '服务不可用或超时', provider_http_error: '运营商返回错误', invalid_verdict: '判定格式无效', configuration_changed: '配置已变化，请重试', accounting_unavailable: '预算账本不可用', settlement_pending: '费用等待结算', invalid_payload: 'payload 无效', provider_limit_mismatch: '运营商实际 token 超过估算或输出上限', request_already_running: '此请求已在审核', invalid_response: '响应无效', provider_not_configured: '服务未配置', no_provider_available: '没有可用服务', queue_full: '审核队列已满', invalid_input: '输入格式无效', proxy_unavailable: '代理不可用', invalid_endpoint: 'API 地址无效' },
   },
   en: {
+    channelModeDescription: 'Model reviews follow the selected "{mode}" behavior. The context policy below determines what is reviewed.',
+    setupTab: "Audit setup",
+    trialTab: "Test",
+    budgetTab: "Budget",
+    moreSettings: "More settings",
+    lessSettings: "Fewer settings",
+    newPathHint: "After saving, requests use the channels below. Balanced or quality-first mode enables context review and escalation. Existing scope, sampling, blocking and bans still apply.",
+    oldPathHint: "After saving, requests keep using the original engine, without enhanced context selection or tiered review. Enable this option to configure the new flow. Original settings are preserved.",
+    providerAdvanced: "Advanced: API, limits and custom requests",
+    pricingSettings: "Pricing and cost controls",
+    policyAdvanced: "Advanced: time, call and context limits",
+    promptSimpleHint: "Enter your audit rules. A custom payload is usually unnecessary.",
+    legacyModeShort: "Reviews only the latest user text without escalation. Enhanced context review is not enabled automatically.",
+    balancedModeShort: "Start with an initial audit; flagged or uncertain results go to a strong channel. Configure channels for both stages.",
+    qualityModeShort: "Use a strong channel directly when audit quality is the priority. Validate channels with real samples.",
+    routingShort: "Automatic selection needs actual prices, validated audit quality and verified output limits. You can also choose channels manually.",
+
 
     "purpose": "Channel purpose",
     "primaryPurpose": "Initial audit",
@@ -120,7 +154,7 @@ export const moderationV2Messages = {
     "history": "History"
 ,
 
-    auditValidated: 'I validated this channel for automatic selection', auditValidatedHint: 'Test benign and policy-violating examples in fixed-primary mode first. This is an operator confirmation, not a measured accuracy score.', selectedChannel: 'Estimated channel (availability and quota checked on call)',
+    auditValidated: 'I validated this channel with audit samples', auditValidatedHint: 'Test benign and policy-violating examples in compatibility mode with a fixed channel first. This checkbox does not automatically validate the model.', selectedChannel: 'Estimated channel (availability and quota checked on call)',
 
     channelMode: 'Use compatible model audit channels', channelModeHint: 'Configure providers and models here. Routing follows runtime settings; scope, blocking, bans and logs remain part of this risk-control center.',
     routing: 'Channel selection', cheapest: 'Automatic: prefer lower estimated cost among eligible channels', priority: 'Choose primary and fallback channels',
