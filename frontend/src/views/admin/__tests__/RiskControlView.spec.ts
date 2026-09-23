@@ -4,6 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import type { DOMWrapper, VueWrapper } from '@vue/test-utils'
 
 import RiskControlView from '../RiskControlView.vue'
+import { moderationV2API, newAuditProvider } from '@/api/admin/moderationV2'
 import type { ContentModerationAPIKeyStatus, ContentModerationConfig, UpdateContentModerationConfig } from '@/api/admin/riskControl'
 
 const {
@@ -47,6 +48,11 @@ vi.mock('@/api/admin', () => ({
       getAll: getProxies,
     },
   },
+}))
+
+vi.mock('@/api/admin/moderationV2', async importOriginal => ({
+  ...await importOriginal<typeof import('@/api/admin/moderationV2')>(),
+  moderationV2API: { preview: vi.fn(), test: vi.fn(), usage: vi.fn() },
 }))
 
 vi.mock('@/stores/app', () => ({
@@ -206,6 +212,8 @@ describe('admin RiskControlView', () => {
     showError.mockReset()
     showSuccess.mockReset()
     testAPIKeys.mockReset()
+    vi.mocked(moderationV2API.test).mockReset()
+    vi.mocked(moderationV2API.preview).mockReset()
 
     getConfig.mockResolvedValue(baseConfig())
     getStatus.mockResolvedValue(runtimeStatus())
@@ -244,6 +252,33 @@ describe('admin RiskControlView', () => {
     await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click'); await flushPromises()
     expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({ channels: expect.objectContaining({ enabled: true, routing: 'lowest_cost', revision: 3 }) }))
     expect(showError).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('saves inline changes without closing the trial or automatically calling a model', async () => {
+    const provider = { ...newAuditProvider(), id: 'existing', name: 'Saved provider', model: 'small', enabled: true, key_masks: ['****tail'] }
+    getConfig.mockResolvedValue({ ...baseConfig(), channels: { revision: 3, enabled: true, routing: 'priority', currency: 'CNY', unresolved_policy: 'reject_temporary', primary_id: 'existing', fallback_ids: [], max_attempts: 2, cache_ttl_seconds: 900, limits: { daily_calls: 0, daily_tokens: 0, daily_amount: '' }, providers: [provider] } })
+    const wrapper = mount(RiskControlView, { global: { stubs: { AppLayout: AppLayoutStub, BaseDialog: BaseDialogStub, Icon: true, Select: true, Toggle: true, Pagination: true, ModelWhitelistSelector: ModelWhitelistSelectorStub, ProxySelector: true } } })
+    await flushPromises()
+    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+    await findButtonByText(wrapper, 'moderationV2.trialTab').trigger('click')
+    expect(wrapper.find('[data-test="trial-needs-save"]').exists()).toBe(false)
+    await findButtonByText(wrapper, 'moderationV2.setupTab').trigger('click')
+    await wrapper.get('[data-test="channel-prompt"]').setValue('New rules')
+    await findButtonByText(wrapper, 'moderationV2.trialTab').trigger('click')
+    await wrapper.get('[data-test="v2-test-text"]').setValue('Keep this trial sample')
+    expect(wrapper.get('[data-test="test-v2"]').attributes('disabled')).toBeDefined()
+    updateConfig.mockRejectedValueOnce(new Error('Save failed'))
+    await wrapper.get('[data-test="save-before-trial"]').trigger('click'); await flushPromises()
+    expect(wrapper.find('[data-test="trial-needs-save"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="test-v2"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-test="save-before-trial"]').trigger('click'); await flushPromises()
+    expect(wrapper.find('[data-test="trial-needs-save"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="test-v2"]').attributes('disabled')).toBeUndefined()
+    expect((wrapper.get('[data-test="v2-test-text"]').element as HTMLTextAreaElement).value).toBe('Keep this trial sample')
+    expect(updateConfig).toHaveBeenLastCalledWith(expect.objectContaining({ channels: expect.objectContaining({ providers: [expect.objectContaining({ audit_prompt: 'New rules' })] }) }))
+    expect(moderationV2API.test).not.toHaveBeenCalled()
+    expect(moderationV2API.preview).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 

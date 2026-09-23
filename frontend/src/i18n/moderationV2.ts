@@ -1,5 +1,8 @@
 export const moderationV2Messages = {
   zh: {
+    saveBeforeTrial: '请先保存当前配置，再进行预估或试跑，避免误用上次的模型和规则。保存不会调用模型。',
+    saveForTrial: '保存配置并留在此页',
+    savingForTrial: '正在保存…',
     channelModeDescription: '模型审核沿用所选“{mode}”处置方式；送审范围由下方上下文策略决定。',
     setupTab: "审核配置",
     trialTab: "试跑",
@@ -90,6 +93,9 @@ export const moderationV2Messages = {
     reasons: { "no_qualified_channel": "没有符合审核等级的可用渠道", "invalid_or_oversized_input": "输入无效或超过解析上限", "context_limit_exceeded": "完整上下文超过历史预算", "required_context_exceeds_limit": "必要目标或历史超出预算", "missing_context": "缺少所引用的历史上下文", "request_budget_exhausted": "本次审核金额预算不足", "request_deadline_exceeded": "已达到整个审核的总时限", "invalid_evidence_reference": "模型引用了未提供的证据", "review_required": "初审结果需要强审", "review_unresolved": "强审仍不确定或证据不足", "review_disagreement": "初审命中与强审放行存在冲突", no_priced_channel: '没有满足自动择价条件的渠道', unsupported_input_parts: '输入包含当前模式不支持的附件或工具内容', provider_cooldown_or_limit: '服务冷却或达到上限', input_budget_exceeded: '输入超出预算', images_not_supported: '当前模式不支持图片', no_current_user_text: '缺少可审核的当前用户文字', budget_or_concurrency_exhausted: '预算或并发额度不足', provider_unavailable: '服务不可用或超时', provider_http_error: '运营商返回错误', invalid_verdict: '判定格式无效', configuration_changed: '配置已变化，请重试', accounting_unavailable: '预算账本不可用', settlement_pending: '费用等待结算', invalid_payload: 'payload 无效', provider_limit_mismatch: '运营商实际 token 超过估算或输出上限', request_already_running: '此请求已在审核', invalid_response: '响应无效', provider_not_configured: '服务未配置', no_provider_available: '没有可用服务', queue_full: '审核队列已满', invalid_input: '输入格式无效', proxy_unavailable: '代理不可用', invalid_endpoint: 'API 地址无效' },
   },
   en: {
+    saveBeforeTrial: 'Save the current settings before estimating or testing, so the previous model and rules are not used. Saving does not call a model.',
+    saveForTrial: 'Save and stay here',
+    savingForTrial: 'Saving…',
     channelModeDescription: 'Model reviews follow the selected "{mode}" behavior. The context policy below determines what is reviewed.',
     setupTab: "Audit setup",
     trialTab: "Test",

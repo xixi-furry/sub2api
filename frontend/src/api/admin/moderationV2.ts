@@ -53,3 +53,19 @@ export function newAuditProvider(): AuditProvider {
     max_output_tokens: 512, output_parameter: 'max_tokens', output_limit_verified: false, max_concurrent: 4,
     prices: { input: '', cached_input: '', output: '', per_request: '' }, limits: emptyAuditLimits() }
 }
+
+// Normalize optional fields before taking a saved-draft snapshot. Rendering a
+// section must not make an unchanged server configuration appear dirty.
+export function normalizeAuditDraft(config: AuditConfig): AuditConfig {
+  config.policy ??= defaultAuditPolicy()
+  config.routing ||= config.revision ? 'priority' : 'lowest_cost'
+  for (const provider of config.providers) {
+    provider.purpose ||= 'primary'
+    provider.api_format ||= 'chat_completions'
+    provider.reasoning_parameter ||= 'none'
+    provider.reasoning_effort ||= 'low'
+    provider.header_timeout_ms ??= 0
+    provider.idle_timeout_ms ??= 0
+  }
+  return config
+}

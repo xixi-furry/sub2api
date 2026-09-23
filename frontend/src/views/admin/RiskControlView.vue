@@ -956,7 +956,7 @@
 
           </div>
           <div v-else-if="activeSettingsTab === 'auditTrial' && channels?.enabled" class="space-y-5">
-            <ContentModerationChannels v-model="channels" section="trial" />
+            <ContentModerationChannels v-model="channels" section="trial" :config-saved="!channelsDirty" :saving="saving" @save="saveConfig(true)" />
           </div>
           <div v-else-if="activeSettingsTab === 'auditUsage' && channels" class="space-y-5">
             <ContentModerationChannels v-model="channels" section="usage" />
@@ -1157,7 +1157,7 @@
         <template #footer>
           <div class="flex justify-end gap-2">
             <button type="button" class="btn btn-secondary" @click="settingsOpen = false">{{ t('common.cancel') }}</button>
-            <button type="button" class="btn btn-primary inline-flex items-center gap-2" :disabled="saving" @click="saveConfig">
+            <button type="button" class="btn btn-primary inline-flex items-center gap-2" :disabled="saving" @click="saveConfig()">
               <Icon v-if="saving" name="refresh" size="sm" class="animate-spin" />
               <Icon v-else name="check" size="sm" />
               {{ saving ? t('common.saving') : t('admin.riskControl.saveConfig') }}
@@ -1252,7 +1252,7 @@ import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ContentModerationChannels from '@/components/admin/ContentModerationChannels.vue'
-import type { AuditConfig } from '@/api/admin/moderationV2'
+import { normalizeAuditDraft, type AuditConfig } from '@/api/admin/moderationV2'
 import Icon from '@/components/icons/Icon.vue'
 import Select from '@/components/common/Select.vue'
 import Toggle from '@/components/common/Toggle.vue'
@@ -1331,6 +1331,8 @@ const { t, te } = useI18n()
 const appStore = useAppStore()
 const channels = ref<AuditConfig>()
 const savedChannelMode = ref('legacy')
+const savedChannelsSnapshot = ref('')
+const channelsDirty = computed(() => JSON.stringify(channels.value) !== savedChannelsSnapshot.value)
 const defaultBlockMessage = () => t('admin.riskControl.defaultBlockMessage')
 
 const loading = ref(true)
@@ -1921,8 +1923,8 @@ const runtimeBadgeClass = computed(() => {
 
 function applyConfig(config: ContentModerationConfig) {
   savedChannelMode.value = config.channels?.policy?.mode || 'legacy'
-  channels.value = config.channels ? structuredClone(config.channels) : undefined
-  if (channels.value && !channels.value.routing) channels.value.routing = channels.value.revision ? 'priority' : 'lowest_cost'
+  channels.value = config.channels ? normalizeAuditDraft(structuredClone(config.channels)) : undefined
+  savedChannelsSnapshot.value = JSON.stringify(channels.value) ?? ''
 
   savedEngine.value = config.engine ?? 'openai'
   configForm.engine = savedEngine.value
@@ -2019,7 +2021,7 @@ async function loadStatus(silent = true) {
   }
 }
 
-async function saveConfig() {
+async function saveConfig(keepOpen = false) {
   saving.value = true
   try {
     const modelFilterPayload = buildModelFilterPayload()
@@ -2090,7 +2092,7 @@ async function saveConfig() {
     }
     const updated = await adminAPI.riskControl.updateConfig(payload)
     applyConfig(updated)
-    settingsOpen.value = false
+    if (!keepOpen) settingsOpen.value = false
     appStore.showSuccess(t('admin.riskControl.saved'))
     await Promise.all([loadStatus(true), loadLogs()])
   } catch (err: unknown) {

@@ -135,9 +135,13 @@
           <article v-for="row in usage?.providers || []" :key="row.provider_id" class="rounded-xl border border-gray-200 p-4 dark:border-dark-700"><h3 class="mb-3 font-medium">{{ config.providers.find(p => p.id === row.provider_id)?.name || row.provider_id }}</h3><dl class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><div><dt class="hint">{{ t('moderationV2.calls') }}</dt><dd>{{ row.calls }}</dd></div><div><dt class="hint">{{ t('moderationV2.confirmed') }}</dt><dd>{{ row.confirmed_amount }} {{ usage?.currency }}</dd></div><div><dt class="hint">{{ t('moderationV2.held') }}</dt><dd>{{ row.held_amount }} {{ usage?.currency }}</dd></div><div><dt class="hint">{{ t('moderationV2.unknown') }}</dt><dd>{{ row.unknown_calls }}</dd></div><div class="sm:col-span-2"><dt class="hint">{{ t('moderationV2.tokenUsage') }}</dt><dd>{{ row.input }} / {{ row.cached_input }} / {{ row.output }}</dd></div></dl></article>
         </div>
         <div v-if="section === 'trial'" class="space-y-4">
+          <div v-if="needsSave" class="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-primary-50 p-4 text-sm text-primary-900 dark:bg-primary-950/30 dark:text-primary-200" role="status" data-test="trial-needs-save">
+            <p>{{ t('moderationV2.saveBeforeTrial') }}</p>
+            <button type="button" class="btn btn-secondary" :disabled="saving || busy" data-test="save-before-trial" @click="emit('save')">{{ t(saving ? 'moderationV2.savingForTrial' : 'moderationV2.saveForTrial') }}</button>
+          </div>
           <p class="hint">{{ t('moderationV2.testHint') }}</p>
           <label class="field">{{ t('moderationV2.testFormat') }}<select v-model="testProtocol" class="input"><option value="">{{ t('moderationV2.plainText') }}</option><option value="openai_chat_completions">Chat Completions JSON</option><option value="openai_responses">Responses JSON</option><option value="anthropic_messages">Anthropic Messages JSON</option><option value="gemini">Gemini JSON</option></select></label><label class="field">{{ t('moderationV2.testText') }}<textarea v-model="testText" class="input" rows="6" data-test="v2-test-text" /></label>
-          <div class="flex flex-wrap gap-3"><button type="button" class="btn btn-secondary" :disabled="busy || !testText.trim()" data-test="preview-v2" @click="preview">{{ t('moderationV2.preview') }}</button><button type="button" class="btn btn-primary" :disabled="busy || !testText.trim() || !config.revision" data-test="test-v2" @click="test">{{ t('moderationV2.run') }}</button></div>
+          <div class="flex flex-wrap gap-3"><button type="button" class="btn btn-secondary" :disabled="!canRun || !testText.trim()" data-test="preview-v2" @click="preview">{{ t('moderationV2.preview') }}</button><button type="button" class="btn btn-primary" :disabled="!canRun || !testText.trim()" data-test="test-v2" @click="test">{{ t('moderationV2.run') }}</button></div>
           <p v-if="busy" role="status" class="hint">{{ t('moderationV2.pending') }}</p>
           <div v-if="estimate" class="space-y-2 rounded-xl bg-gray-50 p-4 text-sm dark:bg-dark-900/50" role="status"><strong>{{ estimate.fits ? t('moderationV2.fits') : t('moderationV2.tooLong') }}</strong><p>{{ t('moderationV2.selectedChannel') }}: {{ config.providers.find(p => p.id === estimate!.provider_id)?.name || estimate.provider_id || '—' }}</p><p>{{ t('moderationV2.estimatedInput') }}: {{ estimate.estimated_input }} · {{ t('moderationV2.outputLimit') }}: {{ estimate.max_output }}</p><p>{{ t('moderationV2.reserve') }}: {{ estimate.reserved_amount || t('moderationV2.unknownAmount') }} {{ config.currency }}</p><p v-if="estimate.reason">{{ reasonLabel(estimate.reason) }}</p><p class="hint">{{ t('moderationV2.estimateHint') }}</p></div>
           <div v-if="result" class="space-y-3 rounded-xl border border-primary-200 p-4 text-sm dark:border-primary-900" role="status" data-test="v2-result">
@@ -153,20 +157,23 @@
  </div>
 </template>
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AuditLimitFields from './moderation/AuditLimitFields.vue'
-import { moderationV2API, newAuditProvider, defaultAuditPolicy } from '@/api/admin/moderationV2'
+import { moderationV2API, newAuditProvider, normalizeAuditDraft } from '@/api/admin/moderationV2'
 import type { AuditConfig, AuditPreview, AuditResult, AuditUsage, AuditPrices } from '@/api/admin/moderationV2'
 import { extractApiErrorMessage } from '@/utils/apiError'
 
-const props = defineProps<{ section: 'services' | 'policy' | 'usage' | 'trial' | 'prompt' }>()
+const props = withDefaults(defineProps<{
+  section: 'services' | 'policy' | 'usage' | 'trial' | 'prompt'
+  configSaved?: boolean
+  saving?: boolean
+}>(), { configSaved: true, saving: false })
+const emit = defineEmits<{ save: [] }>()
 const config = defineModel<AuditConfig>({ required: true })
-if (!config.value.policy) config.value.policy = defaultAuditPolicy()
-for (const p of config.value.providers) {
-  p.purpose ||= 'primary'; p.api_format ||= 'chat_completions'; p.reasoning_parameter ||= 'none'; p.reasoning_effort ||= 'low'
-  p.header_timeout_ms ??= 0; p.idle_timeout_ms ??= 0
-}
+normalizeAuditDraft(config.value)
+const needsSave = computed(() => !props.configSaved || !config.value.revision)
+const canRun = computed(() => !needsSave.value && !props.saving && !busy.value)
 const policy = computed(() => config.value.policy!)
 const { t, te } = useI18n()
 const usage = ref<AuditUsage>()
@@ -198,8 +205,25 @@ function onAuditModeChange() {
 function setReview(index: number, id: string) { const ids = [...policy.value.review_ids]; ids[index] = id; policy.value.review_ids = [...new Set(ids.filter(Boolean))] }
 function setFallback(id: string) { config.value.fallback_ids = id ? [id] : [] }
 async function refreshUsage() { busy.value = true; error.value = ''; try { usage.value = await moderationV2API.usage() } catch (e) { displayError(e) } finally { busy.value = false } }
-async function preview() { busy.value = true; error.value = ''; result.value = undefined; estimate.value = undefined; try { estimate.value = await moderationV2API.preview(testInput()) } catch (e) { displayError(e) } finally { busy.value = false } }
-async function test() { busy.value = true; error.value = ''; result.value = undefined; estimate.value = undefined; try { result.value = await moderationV2API.test(testInput()) } catch (e) { displayError(e) } finally { busy.value = false } }
+async function preview() {
+  if (!canRun.value) return
+  const snapshot = JSON.stringify(config.value)
+  busy.value = true; error.value = ''; result.value = undefined; estimate.value = undefined
+  try {
+    const response = await moderationV2API.preview(testInput())
+    if (props.configSaved && snapshot === JSON.stringify(config.value)) estimate.value = response
+  } catch (e) { displayError(e) } finally { busy.value = false }
+}
+async function test() {
+  if (!canRun.value) return
+  const snapshot = JSON.stringify(config.value)
+  busy.value = true; error.value = ''; result.value = undefined; estimate.value = undefined
+  try {
+    const response = await moderationV2API.test(testInput())
+    if (props.configSaved && snapshot === JSON.stringify(config.value)) result.value = response
+  } catch (e) { displayError(e) } finally { busy.value = false }
+}
+watch(() => [props.configSaved, config.value.revision], () => { result.value = undefined; estimate.value = undefined })
 onMounted(() => { if (props.section === 'usage') void refreshUsage() })
 </script>
 <style scoped>
