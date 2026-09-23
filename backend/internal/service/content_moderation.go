@@ -518,6 +518,7 @@ type ContentModerationHashCache interface {
 }
 
 type ContentModerationService struct {
+	priceCatalog             moderationPriceCatalogCache
 	settingRepo              SettingRepository
 	repo                     ContentModerationRepository
 	hashCache                ContentModerationHashCache

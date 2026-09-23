@@ -73,7 +73,7 @@ jobs:
         working-directory: frontend
         run: pnpm install --frozen-lockfile
       - name: Fork regression tests
-        run: pnpm --dir frontend exec vitest run src/views/admin/__tests__/RiskControlView.spec.ts src/components/admin/__tests__/ContentModerationV2Panel.spec.ts src/utils/__tests__/moderationPayload.spec.ts
+        run: pnpm --dir frontend exec vitest run src/views/admin/__tests__/RiskControlView.spec.ts src/components/admin/__tests__/ContentModerationV2Panel.spec.ts src/utils/__tests__/moderationPayload.spec.ts src/components/admin/__tests__/AuditPriceLookup.spec.ts src/utils/__tests__/moderationPrices.spec.ts
       - name: Frontend typecheck and critical vitest
         run: make test-frontend
 

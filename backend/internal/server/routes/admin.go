@@ -171,6 +171,7 @@ func registerContentModerationRoutes(admin *gin.RouterGroup, h *handler.Handlers
 	risk := admin.Group("/risk-control")
 	{
 		risk.GET("/v2/config", h.Admin.ContentModeration.GetV2Config)
+		risk.GET("/v2/model-prices", h.Admin.ContentModeration.GetV2ModelPrices)
 		risk.PUT("/v2/config", h.Admin.ContentModeration.UpdateV2Config)
 		risk.GET("/v2/usage", h.Admin.ContentModeration.GetV2Usage)
 		risk.POST("/v2/preview", h.Admin.ContentModeration.PreviewV2)

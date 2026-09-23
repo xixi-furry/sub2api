@@ -38,8 +38,18 @@ export interface AuditResult {
   verdict?: { flagged: boolean; score: number; reason: string; decision_source: string; provider_id: string; model: string; threshold: number }
   usage?: { input: number; cached_input: number; output: number }
 }
+export interface AuditModelPrice {
+  provider_id: string; provider_name: string; model_id: string; model_name: string
+  matches_channel: boolean; prices: AuditPrices; importable: boolean; manual_reason?: string
+  reasoning?: boolean; context: number
+}
+export interface AuditModelPrices {
+  source: string; currency: 'USD'; fetched_at: string; stale: boolean
+  matched_provider_id: string; total: number; items: AuditModelPrice[]
+}
 const root = '/admin/risk-control/v2'
 export const moderationV2API = {
+  modelPrices: async (q: string, baseURL: string) => (await apiClient.get<AuditModelPrices>(`${root}/model-prices`, { params: { q, base_url: baseURL }, timeout: 20000 })).data,
   config: async () => (await apiClient.get<AuditConfig>(`${root}/config`)).data,
   save: async (data: AuditConfig) => (await apiClient.put<AuditConfig>(`${root}/config`, data)).data,
   usage: async () => (await apiClient.get<AuditUsage>(`${root}/usage`)).data,

@@ -34,6 +34,7 @@
               <details class="rounded-lg bg-gray-50 p-3 dark:bg-dark-900/50" :open="config.routing === 'lowest_cost'" data-test="provider-pricing">
                 <summary class="min-h-8 cursor-pointer text-sm font-medium">{{ t('moderationV2.pricingSettings') }}</summary>
                 <div class="mt-4 space-y-4">
+              <AuditPriceLookup v-model:usd-rate="usdRate" :model="p.model" :base-url="p.base_url" :currency="config.currency" @apply="prices => Object.assign(p.prices, prices)" />
               <div class="grid gap-4 sm:grid-cols-2">
                 <label v-for="f in priceFields" :key="f.key" class="field">{{ t(`moderationV2.${f.label}`) }} · {{ config.currency }}<input v-model="p.prices[f.key]" class="input" inputmode="decimal" placeholder="—" /></label>
               </div>
@@ -160,6 +161,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AuditLimitFields from './moderation/AuditLimitFields.vue'
+import AuditPriceLookup from './moderation/AuditPriceLookup.vue'
 import { moderationV2API, newAuditProvider, normalizeAuditDraft } from '@/api/admin/moderationV2'
 import type { AuditConfig, AuditPreview, AuditResult, AuditUsage, AuditPrices } from '@/api/admin/moderationV2'
 import { extractApiErrorMessage } from '@/utils/apiError'
@@ -180,6 +182,7 @@ const usage = ref<AuditUsage>()
 const busy = ref(false)
 const error = ref('')
 const expanded = ref(config.value.providers[0]?.id || '')
+const usdRate = ref('')
 const testText = ref('')
 const testProtocol = ref('')
 function testInput() { return testProtocol.value ? { protocol: testProtocol.value, body: JSON.parse(testText.value) } : testText.value }

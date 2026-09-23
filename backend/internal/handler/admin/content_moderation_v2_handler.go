@@ -61,3 +61,13 @@ func (h *ContentModerationHandler) TestV2(c *gin.Context) {
 	}
 	response.Success(c, data)
 }
+
+// GetV2ModelPrices queries a public catalog; never accepts or forwards API keys.
+func (h *ContentModerationHandler) GetV2ModelPrices(c *gin.Context) {
+	result, err := h.service.LookupModerationModelPrices(c.Request.Context(), c.Query("q"), c.Query("base_url"))
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
+}

@@ -66,6 +66,7 @@ type modelsDevProvider struct {
 }
 
 type modelsDevModel struct {
+	Cost             map[string]json.RawMessage `json:"cost"`
 	ID               string                     `json:"id"`
 	Name             string                     `json:"name"`
 	Description      string                     `json:"description"`
