@@ -956,7 +956,7 @@
 
           </div>
           <div v-else-if="activeSettingsTab === 'auditTrial' && channels?.enabled" class="space-y-5">
-            <ContentModerationChannels v-model="channels" section="trial" :config-saved="!channelsDirty" :saving="saving" @save="saveConfig(true)" />
+            <ContentModerationChannels v-model="channels" v-model:trial-input="channelTrialInput" section="trial" @configure="activeSettingsTab = 'basic'" :config-saved="!channelsDirty" :saving="saving" @save="saveConfig(true)" />
           </div>
           <div v-else-if="activeSettingsTab === 'auditUsage' && channels" class="space-y-5">
             <ContentModerationChannels v-model="channels" section="usage" />
@@ -1155,9 +1155,11 @@
         </div>
 
         <template #footer>
-          <div class="flex justify-end gap-2">
-            <button type="button" class="btn btn-secondary" @click="settingsOpen = false">{{ t('common.cancel') }}</button>
-            <button type="button" class="btn btn-primary inline-flex items-center gap-2" :disabled="saving" @click="saveConfig()">
+          <div class="flex flex-wrap items-center justify-end gap-2">
+            <p v-if="channels?.enabled" class="mr-auto w-full text-xs leading-5 text-gray-600 dark:text-gray-300 sm:w-auto" role="status" data-test="channel-save-status">{{ t(channelsDirty || !channels.revision ? 'moderationV2.channelDraft' : 'moderationV2.channelSaved') }}</p>
+            <button type="button" class="btn btn-secondary" :disabled="saving" @click="settingsOpen = false">{{ t('common.cancel') }}</button>
+            <button v-if="channels?.enabled && activeSettingsTab === 'basic'" type="button" class="btn btn-primary" :disabled="saving" data-test="save-go-trial" @click="saveConfig(true, true)">{{ t(saving ? 'moderationV2.savingForTrial' : 'moderationV2.saveGoTrial') }}</button>
+            <button type="button" class="btn inline-flex items-center gap-2" :class="channels?.enabled && activeSettingsTab === 'basic' ? 'btn-secondary' : 'btn-primary'" :disabled="saving" @click="saveConfig()">
               <Icon v-if="saving" name="refresh" size="sm" class="animate-spin" />
               <Icon v-else name="check" size="sm" />
               {{ saving ? t('common.saving') : t('admin.riskControl.saveConfig') }}
@@ -1330,6 +1332,7 @@ const riskThresholdCategories = Object.keys(riskThresholdDefaults)
 const { t, te } = useI18n()
 const appStore = useAppStore()
 const channels = ref<AuditConfig>()
+const channelTrialInput = ref({ text: '', protocol: '' })
 const savedChannelMode = ref('legacy')
 const savedChannelsSnapshot = ref('')
 const channelsDirty = computed(() => JSON.stringify(channels.value) !== savedChannelsSnapshot.value)
@@ -2021,7 +2024,8 @@ async function loadStatus(silent = true) {
   }
 }
 
-async function saveConfig(keepOpen = false) {
+async function saveConfig(keepOpen = false, goToTrial = false) {
+  if (saving.value) return
   saving.value = true
   try {
     const modelFilterPayload = buildModelFilterPayload()
@@ -2093,6 +2097,7 @@ async function saveConfig(keepOpen = false) {
     const updated = await adminAPI.riskControl.updateConfig(payload)
     applyConfig(updated)
     if (!keepOpen) settingsOpen.value = false
+    else if (goToTrial && channels.value?.enabled) activeSettingsTab.value = 'auditTrial'
     appStore.showSuccess(t('admin.riskControl.saved'))
     await Promise.all([loadStatus(true), loadLogs()])
   } catch (err: unknown) {

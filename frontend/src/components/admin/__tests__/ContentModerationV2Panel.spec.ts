@@ -132,6 +132,35 @@ describe('channels inside risk-control settings', () => {
     await flushPromises()
     expect(w.find('[data-test="v2-result"]').exists()).toBe(false)
   })
+  it('fills plain and multi-turn samples without starting a model request', async () => {
+    const w = await render('trial')
+    await w.get('[data-test="sample-context"]').trigger('click')
+    const body = JSON.parse((w.get('[data-test="v2-test-text"]').element as HTMLTextAreaElement).value)
+    expect(body.messages).toHaveLength(3)
+    expect(body.messages[0].content).toContain('付费激活')
+    expect((w.get('select').element as HTMLSelectElement).value).toBe('openai_chat_completions')
+    await w.get('[data-test="sample-normal"]').trigger('click')
+    expect((w.get('select').element as HTMLSelectElement).value).toBe('')
+    expect((w.get('[data-test="v2-test-text"]').element as HTMLTextAreaElement).value).toContain('自己开发')
+    expect(moderationV2API.preview).not.toHaveBeenCalled()
+    expect(moderationV2API.test).not.toHaveBeenCalled()
+  })
+  it.each(['preview', 'test'] as const)('discards late %s responses after editing input, even when restored', async action => {
+    let finish!: (value: never) => void
+    vi.mocked(moderationV2API[action]).mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    const w = await render('trial')
+    await w.get('[data-test="v2-test-text"]').setValue('Original')
+    await w.get(`[data-test="${action}-v2"]`).trigger('click')
+    await w.get('[data-test="v2-test-text"]').setValue('Changed')
+    await w.get('[data-test="v2-test-text"]').setValue('Original')
+    finish((action === 'preview'
+      ? { fits: true, estimated_input: 25, max_output: 100, reserved_amount: '0.1', provider_id: 'existing' }
+      : { status: 'reviewed', reason: '', cache_hit: false, attempts: 1, estimated_input: 25 }) as never)
+    await flushPromises()
+    expect(w.find('[data-test="v2-result"]').exists()).toBe(false)
+    expect(w.text()).not.toContain('输入在预算内')
+    expect(w.text()).not.toContain('0.1 CNY')
+  })
   it('keeps both locales complete', () => {
     expect(Object.keys(moderationV2Messages.zh).sort()).toEqual(Object.keys(moderationV2Messages.en).sort())
     expect(Object.keys(moderationV2Messages.zh.reasons).sort()).toEqual(Object.keys(moderationV2Messages.en.reasons).sort())

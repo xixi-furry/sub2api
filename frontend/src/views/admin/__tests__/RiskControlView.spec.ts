@@ -282,6 +282,29 @@ describe('admin RiskControlView', () => {
     wrapper.unmount()
   })
 
+  it('opens trials only after a successful save and preserves input when returning to setup', async () => {
+    const provider = { ...newAuditProvider(), id: 'existing', name: 'Saved provider', model: 'small', enabled: true, key_masks: ['****tail'] }
+    getConfig.mockResolvedValue({ ...baseConfig(), channels: { revision: 3, enabled: true, routing: 'priority', currency: 'CNY', unresolved_policy: 'reject_temporary', primary_id: 'existing', fallback_ids: [], max_attempts: 2, cache_ttl_seconds: 900, limits: { daily_calls: 0, daily_tokens: 0, daily_amount: '' }, providers: [provider] } })
+    const wrapper = mount(RiskControlView, { global: { stubs: { AppLayout: AppLayoutStub, BaseDialog: BaseDialogStub, Icon: true, Select: true, Toggle: true, Pagination: true, ModelWhitelistSelector: ModelWhitelistSelectorStub, ProxySelector: true } } })
+    await flushPromises()
+    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+    await wrapper.get('[data-test="channel-prompt"]').setValue('Updated rules')
+    updateConfig.mockRejectedValueOnce(new Error('Save failed'))
+    await wrapper.get('[data-test="save-go-trial"]').trigger('click'); await flushPromises()
+    expect(wrapper.find('[data-test="v2-test-text"]').exists()).toBe(false)
+    expect((wrapper.get('[data-test="channel-prompt"]').element as HTMLTextAreaElement).value).toBe('Updated rules')
+    await wrapper.get('[data-test="save-go-trial"]').trigger('click'); await flushPromises()
+    expect(wrapper.find('[data-test="trial-needs-save"]').exists()).toBe(false)
+    await wrapper.get('[data-test="v2-test-text"]').setValue('Keep my sample across tabs')
+    await wrapper.get('[data-test="back-to-config"]').trigger('click')
+    expect(wrapper.find('[data-test="channel-mode"]').exists()).toBe(true)
+    await findButtonByText(wrapper, 'moderationV2.trialTab').trigger('click')
+    expect((wrapper.get('[data-test="v2-test-text"]').element as HTMLTextAreaElement).value).toBe('Keep my sample across tabs')
+    expect(moderationV2API.test).not.toHaveBeenCalled()
+    expect(moderationV2API.preview).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('round-trips custom code, preserves it across engine changes and saves both drafts', async () => {
     getConfig.mockResolvedValue({ ...baseConfig(), api_format: 'chat_completions', audit_prompt: 'saved policy', payload_script: 'const requestBody = {}', confidence_threshold: 0.9 })
     const wrapper = mount(RiskControlView, { global: { stubs: { AppLayout: AppLayoutStub, BaseDialog: BaseDialogStub, Icon: true, Select: true, Toggle: true, Pagination: true, ModelWhitelistSelector: ModelWhitelistSelectorStub, ProxySelector: true } } })

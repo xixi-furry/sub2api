@@ -140,7 +140,14 @@
             <p>{{ t('moderationV2.saveBeforeTrial') }}</p>
             <button type="button" class="btn btn-secondary" :disabled="saving || busy" data-test="save-before-trial" @click="emit('save')">{{ t(saving ? 'moderationV2.savingForTrial' : 'moderationV2.saveForTrial') }}</button>
           </div>
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <p class="hint">{{ t('moderationV2.trialSteps') }}</p>
+            <button type="button" class="btn btn-secondary" data-test="back-to-config" @click="emit('configure')">{{ t('moderationV2.backToConfig') }}</button>
+          </div>
           <p class="hint">{{ t('moderationV2.testHint') }}</p>
+          <div class="flex flex-wrap gap-2" :aria-label="t('moderationV2.trialSamples')">
+            <button v-for="sample in ['normal', 'risk', 'context'] as const" :key="sample" type="button" class="btn btn-secondary min-h-11" :data-test="`sample-${sample}`" @click="useSample(sample)">{{ t(`moderationV2.samples.${sample}`) }}</button>
+          </div>
           <label class="field">{{ t('moderationV2.testFormat') }}<select v-model="testProtocol" class="input"><option value="">{{ t('moderationV2.plainText') }}</option><option value="openai_chat_completions">Chat Completions JSON</option><option value="openai_responses">Responses JSON</option><option value="anthropic_messages">Anthropic Messages JSON</option><option value="gemini">Gemini JSON</option></select></label><label class="field">{{ t('moderationV2.testText') }}<textarea v-model="testText" class="input" rows="6" data-test="v2-test-text" /></label>
           <div class="flex flex-wrap gap-3"><button type="button" class="btn btn-secondary" :disabled="!canRun || !testText.trim()" data-test="preview-v2" @click="preview">{{ t('moderationV2.preview') }}</button><button type="button" class="btn btn-primary" :disabled="!canRun || !testText.trim()" data-test="test-v2" @click="test">{{ t('moderationV2.run') }}</button></div>
           <p v-if="busy" role="status" class="hint">{{ t('moderationV2.pending') }}</p>
@@ -171,7 +178,8 @@ const props = withDefaults(defineProps<{
   configSaved?: boolean
   saving?: boolean
 }>(), { configSaved: true, saving: false })
-const emit = defineEmits<{ save: [] }>()
+const emit = defineEmits<{ save: []; configure: [] }>()
+const trialInput = defineModel<{ text: string; protocol: string }>('trialInput', { default: () => ({ text: '', protocol: '' }) })
 const config = defineModel<AuditConfig>({ required: true })
 normalizeAuditDraft(config.value)
 const needsSave = computed(() => !props.configSaved || !config.value.revision)
@@ -183,8 +191,14 @@ const busy = ref(false)
 const error = ref('')
 const expanded = ref(config.value.providers[0]?.id || '')
 const usdRate = ref('')
-const testText = ref('')
-const testProtocol = ref('')
+const testText = computed({ get: () => trialInput.value.text, set: text => { trialInput.value = { ...trialInput.value, text } } })
+const testProtocol = computed({ get: () => trialInput.value.protocol, set: protocol => { trialInput.value = { ...trialInput.value, protocol } } })
+let trialGeneration = 0
+function useSample(sample: 'normal' | 'risk' | 'context') {
+  trialInput.value = sample === 'context'
+    ? { protocol: 'openai_chat_completions', text: JSON.stringify({ messages: [{ role: 'user', content: t('moderationV2.samples.riskText') }, { role: 'assistant', content: t('moderationV2.samples.replyText') }, { role: 'user', content: t('moderationV2.samples.followupText') }] }, null, 2) }
+    : { protocol: '', text: t(`moderationV2.samples.${sample}Text`) }
+}
 function testInput() { return testProtocol.value ? { protocol: testProtocol.value, body: JSON.parse(testText.value) } : testText.value }
 const result = ref<AuditResult>()
 const estimate = ref<AuditPreview>()
@@ -211,22 +225,24 @@ async function refreshUsage() { busy.value = true; error.value = ''; try { usage
 async function preview() {
   if (!canRun.value) return
   const snapshot = JSON.stringify(config.value)
+  const generation = ++trialGeneration
   busy.value = true; error.value = ''; result.value = undefined; estimate.value = undefined
   try {
     const response = await moderationV2API.preview(testInput())
-    if (props.configSaved && snapshot === JSON.stringify(config.value)) estimate.value = response
-  } catch (e) { displayError(e) } finally { busy.value = false }
+    if (generation === trialGeneration && props.configSaved && snapshot === JSON.stringify(config.value)) estimate.value = response
+  } catch (e) { if (generation === trialGeneration) displayError(e) } finally { busy.value = false }
 }
 async function test() {
   if (!canRun.value) return
   const snapshot = JSON.stringify(config.value)
+  const generation = ++trialGeneration
   busy.value = true; error.value = ''; result.value = undefined; estimate.value = undefined
   try {
     const response = await moderationV2API.test(testInput())
-    if (props.configSaved && snapshot === JSON.stringify(config.value)) result.value = response
-  } catch (e) { displayError(e) } finally { busy.value = false }
+    if (generation === trialGeneration && props.configSaved && snapshot === JSON.stringify(config.value)) result.value = response
+  } catch (e) { if (generation === trialGeneration) displayError(e) } finally { busy.value = false }
 }
-watch(() => [props.configSaved, config.value.revision], () => { result.value = undefined; estimate.value = undefined })
+watch(() => [props.configSaved, config.value.revision, testText.value, testProtocol.value], () => { trialGeneration++; result.value = undefined; estimate.value = undefined; error.value = '' }, { flush: 'sync' })
 onMounted(() => { if (props.section === 'usage') void refreshUsage() })
 </script>
 <style scoped>
