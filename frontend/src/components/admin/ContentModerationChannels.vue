@@ -248,8 +248,7 @@ onMounted(() => { if (props.section === 'usage') void refreshUsage() })
 <style scoped>
 .field { display: flex; flex-direction: column; gap: .5rem; font-size: .875rem; min-width: 0; }
 .field .input { width: 100%; min-width: 0; }
-.hint { font-size: .75rem; line-height: 1.7; color: #746d80; overflow-wrap: anywhere; }
-:global(.dark) .hint { color: #aaa1b8; }
+.hint { font-size: .75rem; line-height: 1.7; @apply text-gray-600 dark:text-gray-300; overflow-wrap: anywhere; }
 .metric { border-radius: .75rem; background: rgb(128 103 178 / .07); padding: 1rem; font-size: .875rem; }
 .metric strong { display: block; margin-top: .5rem; font-size: 1.5rem; }
 </style>
