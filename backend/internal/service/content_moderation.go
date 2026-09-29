@@ -323,7 +323,7 @@ type ContentModerationModelFilter struct {
 
 type ContentModerationCheckInput struct {
 	AuditEventID       string // Server-generated identity; correlation IDs may be supplied by clients.
-	riskControlLogOnly bool // Captured at admission and retained by asynchronous tasks.
+	riskControlLogOnly bool   // Captured at admission and retained by asynchronous tasks.
 	RequestID          string
 	UserID             int64
 	UserEmail          string
