@@ -78,6 +78,18 @@ jobs:
         run: pnpm --dir frontend exec vitest run src/views/admin/__tests__/RiskControlView.spec.ts src/components/admin/__tests__/ContentModerationV2Panel.spec.ts src/utils/__tests__/moderationPayload.spec.ts src/components/admin/__tests__/AuditPriceLookup.spec.ts src/utils/__tests__/moderationPrices.spec.ts
       - name: Frontend typecheck and critical vitest
         run: make test-frontend
+      - name: Upstream account and dashboard regressions
+        run: >-
+          pnpm --dir frontend exec vitest run
+          src/components/account/__tests__/AccountStatusIndicator.spec.ts
+          src/components/account/__tests__/ClaudeResetCreditsCell.spec.ts
+          src/components/account/__tests__/EditAccountModal.spec.ts
+          src/components/account/__tests__/ModelWhitelistSelector.spec.ts
+          src/components/keys/__tests__/UseKeyModal.spec.ts
+          src/composables/__tests__/useModelWhitelist.spec.ts
+          src/views/admin/__tests__/DashboardView.spec.ts
+      - name: Frontend production build
+        run: pnpm --dir frontend run build
 
   golangci-lint:
     runs-on: ubuntu-latest

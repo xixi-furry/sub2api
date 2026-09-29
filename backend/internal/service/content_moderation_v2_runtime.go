@@ -381,6 +381,13 @@ func (s *ContentModerationService) recordModerationV2(ctx context.Context, in Co
 func (s *ContentModerationService) checkModerationV2(ctx context.Context, in ContentModerationCheckInput, cfg *ModerationV2Config, shared *ContentModerationConfig, eventID string) *ContentModerationDecision {
 	result := s.evaluateModerationV2(ctx, in, cfg, shared, "gateway", eventID)
 	decision := moderationV2Decision(result, cfg, shared)
+	// Apply the admission snapshot before recording the audit and sync metrics.
+	// Trusted users still consume the same channel budgets and retain verdicts.
+	if in.riskControlLogOnly {
+		decision.Allowed, decision.Blocked = true, false
+		decision.Action = ContentModerationActionAllow
+		decision.Message, decision.StatusCode, decision.ErrorCode = "", 0, ""
+	}
 	s.recordModerationV2(ctx, in, shared, result, decision, eventID)
 	return decision
 }
