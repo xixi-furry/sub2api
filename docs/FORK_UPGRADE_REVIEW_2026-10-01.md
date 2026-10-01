@@ -1,14 +1,14 @@
 # 二开评估与官方 v0.2.11 升级记录
 
-评估时间：2026-10-01（北京时间）。升级对象为 `xixi-furry/sub2api` 的当前 `main`，原发布版本为 `v0.2.10-fix1`。
+评估时间：2026-10-01（北京时间）。仓库定时同步已先将官方 `v0.2.11` 合入 fork `main` 并发布 `v0.2.11-fix1`；本记录同时评估该同步和随后官方 `main` 的修复。
 
 ## 升级基线与合并
 
-- 升级前 fork `main`：`1e067711936ad26bdaf9040b7d814b647075dd7e`，已包含官方 `v0.2.10` 和本仓库审核、预算、主题定制。
+- 前一版本 fork `main`：`1e067711936ad26bdaf9040b7d814b647075dd7e`，已包含官方 `v0.2.10` 和本仓库审核、预算、主题定制。定时同步在 `d1e255c29f513b01d412c08b9985fdfbb54f5549` 合入官方发布标签，并通过 [Fork Release](https://github.com/xixi-furry/sub2api/actions/runs/36797825175) 发布 [v0.2.11-fix1](https://github.com/xixi-furry/sub2api/releases/tag/v0.2.11-fix1)。
 - 前次官方基线：`a60a29549f488a854966aaec9541abbe006cac22`。
 - 本次合入官方最新 `main`：`d6adebd22de00478cd021119ba755f37bcb94fb5`，`backend/cmd/server/VERSION` 为 `0.2.11`。官方 [v0.2.11 Release](https://github.com/Wei-Shaw/sub2api/releases/tag/v0.2.11) 标签指向 `96f4c115c9749078f90cbf210a01d39baf3f53b6`；本次还包含其后主分支的 Axios 1.20.0 与 Grok CLI 修复。
-- 两边从前次基线出发分别修改 101、73 个文件，仅 `backend/internal/server/routes/admin.go` 重叠。普通三方 Git merge 自动完成，无文本冲突。官方 Claude 限额重置兑换路由和本仓库风控 v2 路由均保留。
-- `.github/fork.json` 已更新到本次官方提交，供后续自动同步与 fork 版本规划使用。本次无官方数据库迁移。
+- 从前次官方基线比较，官方和 fork 分别修改 101、73 个文件，仅 `backend/internal/server/routes/admin.go` 重叠；两套路由自动合并，保留官方 Claude 限额重置兑换和 fork 风控 v2。将候选分支再与定时同步后的 fork `main` 合并时，仅 `.github/fork.json` 发生元数据冲突，已解析为更新的官方 `main` 提交 `d6adebd`。解析后的代码树与通过本地回归的候选代码树完全一致。
+- `.github/fork.json` 已更新到本次官方提交，供后续自动同步与 fork 版本规划使用。已有 `v0.2.11-fix1` 镜像基于官方发布标签，不包含此后 Axios 与 Grok 修复；本次无官方数据库迁移。
 
 ## 新版功能与二开适配
 
