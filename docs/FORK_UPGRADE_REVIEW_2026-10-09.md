@@ -27,6 +27,7 @@
 
 - 合并索引无未解决冲突，`git diff --cached --check` 通过；fork 版本规划 Python 测试 6 项通过。
 - 前端 ESLint、TypeScript、关键测试与完整 Vitest 套件（365 个文件、2826 项），以及生产构建通过。
-- Apple Container 生命周期、Compose 安全、Gateway 环境、运行资源和 Caddyfile 脚本检查通过。本机没有 Docker，简易 Compose 检查留给 CI。
-- 本机没有 Go；后端单元、集成与静态检查以升级 PR 的 GitHub Actions 结果为准，通过后再合入 fork `main`。
+- Apple Container 生命周期、Compose 安全、Gateway 环境、运行资源和 Caddyfile 脚本检查通过。使用已核对摘要的官方 Compose CLI，在临时目录补跑简易模式环境渲染检查，通过。
+- 使用已核对摘要的官方 Go 1.27.2 和可达的模块镜像，在本机完成后端 `make test-unit`、`make test-integration`、fork 更新源隔离测试；使用 CI 指定的 golangci-lint v2.14.0 检查，结果为 0 issues。发行矩阵测试 10 项通过。
+- GitHub 的仓库设置 API 显示 Actions 已启用，但运行接口返回 `Actions has been disabled for this repository`（HTTP 422），本 PR 未生成 Actions 检查。上述本机验证覆盖了 CI 的代码测试与静态检查；没有声称远端 CI 通过。
 - 本次没有连接线上数据库、真实支付或审核服务。源码合并不会自动发布 fork 镜像，也不会替换服务器容器。
